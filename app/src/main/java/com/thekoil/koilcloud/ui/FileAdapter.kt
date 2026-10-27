@@ -47,7 +47,8 @@ class FileAdapter(
             val datePart = item.modifiedAt.ifBlank { "—" }
             meta.text = sizePart + datePart
 
-            itemView.setOnClickListener { if (item.type != "folder") onPreview(item) }
+            // Папки и файлы — оба идут в onPreview, решение принимает MainActivity
+            itemView.setOnClickListener { onPreview(item) }
 
             if (item.type == "folder") {
                 download.visibility = View.GONE
