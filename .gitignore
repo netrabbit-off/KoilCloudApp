@@ -1,0 +1,84 @@
+# ==========================================
+# Android / Gradle
+# ==========================================
+
+# Build artifacts
+*.apk
+*.aar
+*.ap_
+*.aab
+*.dex
+*.class
+
+# Generated build folders
+.gradle/
+build/
+**/build/
+
+# Local configuration (contains your SDK path)
+local.properties
+
+# Kotlin cache
+.kotlin/
+
+# External native build (NDK/CMake)
+.externalNativeBuild/
+.cxx/
+
+# Proguard
+proguard/
+
+# ==========================================
+# Android Studio / IntelliJ IDEA
+# ==========================================
+
+# IDE settings (personal preferences, should not be shared)
+.idea/
+*.iml
+*.iws
+*.ipr
+.navigation/
+captures/
+out/
+
+# ==========================================
+# Signing & Secrets (CRITICAL - NEVER COMMIT)
+# ==========================================
+
+*.jks
+*.keystore
+key.properties
+.signing/
+
+# ==========================================
+# Logs & Crash Reports
+# ==========================================
+
+*.log
+*.hprof
+hs_err_pid*
+replay_pid*
+
+# ==========================================
+# OS & System Files
+# ==========================================
+
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# ==========================================
+# Lint
+# ==========================================
+
+lint/*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
