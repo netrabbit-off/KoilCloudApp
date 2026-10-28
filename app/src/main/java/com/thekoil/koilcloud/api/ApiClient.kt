@@ -1,11 +1,16 @@
 package com.thekoil.koilcloud.api
 
+import android.content.Context
+import android.net.Uri
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
 import com.google.gson.Gson
 import com.thekoil.koilcloud.model.FileItem
 import com.thekoil.koilcloud.model.FilesResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
@@ -61,6 +66,47 @@ object ApiClient {
             val itemParent = item.path.substringBeforeLast('/', missingDelimiterValue = "")
             itemParent == normalizedParent && item.path != parentPath
         }
+    }
+
+
+    suspend fun uploadFile(context: Context, uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        // 1. Получаем имя файла из URI (для multipart filename)
+        val fileName = getFileName(context, uri) ?: "upload_${System.currentTimeMillis()}"
+
+        // 2. Читаем байты из content:// URI
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: throw IOException("Cannot open input stream for $uri")
+
+        // 3. Собираем multipart-запрос
+        //    Имя поля "file" должно совпадать с тем, что ждёт ваш бэкенд (в Expo обычно "file")
+        val fileBody = bytes.toRequestBody("application/octet-stream".toMediaTypeOrNull())
+        val multipart = MultipartBody.Builder()
+            .setType(MultipartBody.FORM) // критично, иначе сервер может не распарсить [citation:1][citation:8]
+            .addFormDataPart("file", fileName, fileBody)
+            .build()
+
+        val request = Request.Builder()
+            .url("$baseUrl/upload") // замените на реальный эндпоинт загрузки
+            .apply { authHeaders().forEach { (k, v) -> addHeader(k, v) } }
+            .post(multipart)
+            .build()
+
+        http.newCall(request).execute().use { response ->
+            response.isSuccessful
+        }
+    }
+
+    // Вспомогательная функция: вытащить имя файла из content:// URI
+    private fun getFileName(context: Context, uri: Uri): String? {
+        if (uri.scheme == "content") {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex != -1) return cursor.getString(nameIndex)
+                }
+            }
+        }
+        return uri.lastPathSegment
     }
 
     fun downloadUrl(fileId: String): String = "$baseUrl/files/$fileId/download"

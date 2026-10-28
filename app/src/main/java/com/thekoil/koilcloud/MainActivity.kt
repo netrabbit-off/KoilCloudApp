@@ -1,25 +1,26 @@
 package com.thekoil.koilcloud
 
+import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
+import android.net.Uri
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments
+import androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import kotlinx.coroutines.launch
+import android.widget.Toast
 import android.os.Bundle
 import android.view.View
 import android.widget.ProgressBar
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.thekoil.koilcloud.api.ApiClient
-import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import com.thekoil.koilcloud.ui.FileAdapter
 import com.thekoil.koilcloud.util.DownloadHelper
 import com.thekoil.koilcloud.util.formatBytes
-import kotlinx.coroutines.launch
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
-import android.net.Uri
 
 class MainActivity : AppCompatActivity() {
 
@@ -33,14 +34,18 @@ class MainActivity : AppCompatActivity() {
     private var currentPath: String = "/"
     private var loadingJob: kotlinx.coroutines.Job? = null
 
+    // Фото и видео — до 10 файлов за раз
+    private val pickMedia = registerForActivityResult(
+        PickMultipleVisualMedia(10)
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) uploadFiles(uris)
+    }
 
-    // Лаунчер для выбора медиа
-    private val pickMedia = registerForActivityResult(PickVisualMedia()) { uri: Uri? ->
-        if (uri != null) {
-            // Пользователь выбрал файл. Здесь можно начать загрузку на сервер.
-            uploadFile(uri)
-        }
-        // Если null — пользователь закрыл пикер, ничего не делаем.
+    // Документы — любые, без лимита по типам
+    private val pickDocument = registerForActivityResult(
+        OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) uploadFiles(uris)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,19 +60,21 @@ class MainActivity : AppCompatActivity() {
 
         adapter = FileAdapter(
             onPreview = { item ->
-                // Тап по папке = навигация, по файлу = (пока ничего, превью позже)
-                if (item.type == "folder") {
-                    navigateTo(item.path)
+                when {
+                    item.type == "folder" -> navigateTo(item.path)
+
+                    isImageFile(item.name) -> {
+                        val intent = android.content.Intent(this, ImagePreviewActivity::class.java).apply {
+                            putExtra(ImagePreviewActivity.EXTRA_FILE_ID, item.id)
+                            putExtra(ImagePreviewActivity.EXTRA_FILE_NAME, item.name)
+                        }
+                        startActivity(intent)
+                    }
+
+                    // Позже: видео, PDF, документы
                 }
             },
-            onDownload = { item ->
-                val id = DownloadHelper.download(this, item.id, item.name)
-                if (id != -1L) {
-                    Toast.makeText(this, "Скачивание: ${item.name}", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this, "Ошибка скачивания", Toast.LENGTH_SHORT).show()
-                }
-            }
+            onDownload = { item -> /* ... */ }
         )
         filesList.layoutManager = LinearLayoutManager(this)
         filesList.adapter = adapter
@@ -104,11 +111,9 @@ class MainActivity : AppCompatActivity() {
         loadFiles()
     }
 
-    // Лаунчер для документов (любой тип файла)
-    private val pickDocument = registerForActivityResult(OpenDocument()) { uri: Uri? ->
-        if (uri != null) {
-            uploadFile(uri)
-        }
+    private fun isImageFile(name: String): Boolean {
+        val ext = name.substringAfterLast('.', "").lowercase()
+        return ext in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic")
     }
 
     // Вызов для документов — передаём "*/*", чтобы показать все файлы
@@ -120,6 +125,42 @@ class MainActivity : AppCompatActivity() {
         pickMedia.launch(
             PickVisualMediaRequest(PickVisualMedia.ImageAndVideo)
         )
+    }
+
+    private fun uploadFiles(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+
+        val progressToast = Toast.makeText(
+            this,
+            "Загрузка 0/${uris.size}",
+            Toast.LENGTH_LONG
+        )
+        progressToast.show()
+
+        lifecycleScope.launch {
+            var success = 0
+            for ((index, uri) in uris.withIndex()) {
+                progressToast.setText("Загрузка ${index + 1}/${uris.size}")
+                try {
+                    if (ApiClient.uploadFile(this@MainActivity, uri)) {
+                        success++
+                    } else {
+                        android.util.Log.w("Upload", "Server rejected: $uri")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("Upload", "Failed: $uri", e)
+                }
+            }
+            progressToast.cancel()
+
+            Toast.makeText(
+                this@MainActivity,
+                "Загружено $success из ${uris.size}",
+                Toast.LENGTH_LONG
+            ).show()
+
+            loadFiles()
+        }
     }
 
     private fun navigateTo(path: String) {
@@ -184,8 +225,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun uploadFile(uri: Uri) {
-        android.util.Log.d("Upload", "Selected: $uri")
-        Toast.makeText(this, "Выбран файл: $uri", Toast.LENGTH_SHORT).show()
-        // Здесь будет OkHttp multipart
+        Toast.makeText(this, "Загрузка...", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            try {
+                val success = ApiClient.uploadFile(this@MainActivity, uri)
+                if (success) {
+                    Toast.makeText(this@MainActivity, "Файл загружен", Toast.LENGTH_SHORT).show()
+                    loadFiles() // обновить список
+                } else {
+                    Toast.makeText(this@MainActivity, "Ошибка загрузки", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 }
