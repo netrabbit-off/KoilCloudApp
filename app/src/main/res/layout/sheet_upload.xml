@@ -8,7 +8,6 @@
     android:paddingTop="16dp"
     android:paddingBottom="24dp">
 
-    <!-- Drag handle -->
     <View
         android:layout_width="40dp"
         android:layout_height="4dp"
@@ -21,12 +20,11 @@
         android:layout_height="wrap_content"
         android:layout_marginBottom="16dp"
         android:layout_marginStart="4dp"
-        android:text="Отправить"
+        android:text="Добавить"
         android:textColor="@color/text_primary"
         android:textSize="18sp"
         android:textStyle="bold" />
 
-    <!-- Фото и видео -->
     <LinearLayout
         android:id="@+id/optionMedia"
         android:layout_width="match_parent"
@@ -73,7 +71,6 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Документ -->
     <LinearLayout
         android:id="@+id/optionDocument"
         android:layout_width="match_parent"
@@ -82,6 +79,7 @@
         android:gravity="center_vertical"
         android:background="@drawable/bg_sheet_item"
         android:padding="16dp"
+        android:layout_marginBottom="8dp"
         android:clickable="true"
         android:focusable="true"
         android:foreground="?attr/selectableItemBackground">
@@ -118,4 +116,50 @@
                 android:textSize="12sp" />
         </LinearLayout>
     </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/optionFolder"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_sheet_item"
+        android:padding="16dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:foreground="?attr/selectableItemBackground">
+
+        <TextView
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@drawable/bg_icon"
+            android:gravity="center"
+            android:text="📁"
+            android:textSize="22sp" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="16dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Новая папка"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Создать каталог"
+                android:textColor="@color/text_tertiary"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+
 </LinearLayout>

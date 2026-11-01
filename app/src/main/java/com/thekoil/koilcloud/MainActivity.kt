@@ -1,26 +1,31 @@
 package com.thekoil.koilcloud
 
-import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
+import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
+import android.view.View
+import android.widget.EditText
+import android.widget.ProgressBar
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments
 import androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia
-import com.google.android.material.bottomsheet.BottomSheetDialog
-import kotlinx.coroutines.launch
-import android.widget.Toast
-import android.os.Bundle
-import android.view.View
-import android.widget.ProgressBar
-import android.widget.TextView
-import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.thekoil.koilcloud.api.ApiClient
+import com.thekoil.koilcloud.model.FileItem
 import com.thekoil.koilcloud.ui.FileAdapter
 import com.thekoil.koilcloud.util.DownloadHelper
 import com.thekoil.koilcloud.util.formatBytes
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
@@ -32,19 +37,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var backButton: TextView
 
     private var currentPath: String = "/"
-    private var loadingJob: kotlinx.coroutines.Job? = null
+    private var loadingJob: Job? = null
+    private var cutItem: FileItem? = null
 
-    // Фото и видео — до 10 файлов за раз
-    private val pickMedia = registerForActivityResult(
-        PickMultipleVisualMedia(10)
-    ) { uris: List<Uri> ->
+    private val pickMedia = registerForActivityResult(PickMultipleVisualMedia(10)) { uris: List<Uri> ->
         if (uris.isNotEmpty()) uploadFiles(uris)
     }
 
-    // Документы — любые, без лимита по типам
-    private val pickDocument = registerForActivityResult(
-        OpenMultipleDocuments()
-    ) { uris: List<Uri> ->
+    private val pickDocument = registerForActivityResult(OpenMultipleDocuments()) { uris: List<Uri> ->
         if (uris.isNotEmpty()) uploadFiles(uris)
     }
 
@@ -59,48 +59,31 @@ class MainActivity : AppCompatActivity() {
         backButton = findViewById(R.id.backButton)
 
         adapter = FileAdapter(
-            onPreview = { item ->
-                when {
-                    item.type == "folder" -> navigateTo(item.path)
-
-                    isImageFile(item.name) -> {
-                        val intent = android.content.Intent(this, ImagePreviewActivity::class.java).apply {
-                            putExtra(ImagePreviewActivity.EXTRA_FILE_ID, item.id)
-                            putExtra(ImagePreviewActivity.EXTRA_FILE_NAME, item.name)
-                        }
-                        startActivity(intent)
-                    }
-
-                    // Позже: видео, PDF, документы
+            onPreview = { item -> handlePreview(item) },
+            onDownload = { item ->
+                val id = DownloadHelper.download(this, item.id, item.name)
+                if (id == -1L) {
+                    Toast.makeText(this, "Ошибка скачивания", Toast.LENGTH_SHORT).show()
                 }
             },
-            onDownload = { item -> /* ... */ }
+            onLongClick = { item -> showFileActions(item) }
         )
         filesList.layoutManager = LinearLayoutManager(this)
         filesList.adapter = adapter
 
-        // Кнопка «назад»
-        backButton.setOnClickListener {
-            goUp()
-        }
+        backButton.setOnClickListener { goUp() }
 
-        // Системная кнопка «назад»
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (currentPath != "/") {
-                    goUp()
-                } else {
+                if (currentPath != "/") goUp() else {
                     isEnabled = false
                     onBackPressedDispatcher.onBackPressed()
                 }
             }
         })
 
-        findViewById<View>(R.id.uploadButton).setOnClickListener {
-            showUploadSheet()
-        }
+        findViewById<View>(R.id.uploadButton).setOnClickListener { showUploadSheet() }
 
-        // Storage card
         val used = 47.3 * 1024 * 1024 * 1024
         val total = 128.0 * 1024 * 1024 * 1024
         findViewById<TextView>(R.id.storageRemaining).text = "${formatBytes((total - used).toLong())} free"
@@ -111,30 +94,187 @@ class MainActivity : AppCompatActivity() {
         loadFiles()
     }
 
+    // ---------- PREVIEW ----------
+
+    private fun handlePreview(item: FileItem) {
+        when {
+            item.type == "folder" -> navigateTo(item.path)
+
+            isImageFile(item.name) -> {
+                val media = adapter.getCurrentItems().filter { isImageFile(it.name) }
+                val index = media.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
+                val intent = Intent(this, ImagePreviewActivity::class.java).apply {
+                    putExtra(ImagePreviewActivity.EXTRA_FILE_ID, item.id)
+                    putExtra(ImagePreviewActivity.EXTRA_FILE_NAME, item.name)
+                    putExtra(ImagePreviewActivity.EXTRA_MEDIA_IDS, media.map { it.id }.toTypedArray())
+                    putExtra(ImagePreviewActivity.EXTRA_MEDIA_NAMES, media.map { it.name }.toTypedArray())
+                    putExtra(ImagePreviewActivity.EXTRA_MEDIA_INDEX, index)
+                }
+                startActivity(intent)
+            }
+
+            isVideoOrAudioFile(item.name) -> {
+                val media = adapter.getCurrentItems().filter { isVideoOrAudioFile(it.name) }
+                val index = media.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
+                val intent = Intent(this, MediaPlayerActivity::class.java).apply {
+                    putExtra(MediaPlayerActivity.EXTRA_FILE_ID, item.id)
+                    putExtra(MediaPlayerActivity.EXTRA_FILE_NAME, item.name)
+                    putExtra(MediaPlayerActivity.EXTRA_MEDIA_IDS, media.map { it.id }.toTypedArray())
+                    putExtra(MediaPlayerActivity.EXTRA_MEDIA_NAMES, media.map { it.name }.toTypedArray())
+                    putExtra(MediaPlayerActivity.EXTRA_MEDIA_INDEX, index)
+                }
+                startActivity(intent)
+            }
+        }
+    }
+
     private fun isImageFile(name: String): Boolean {
         val ext = name.substringAfterLast('.', "").lowercase()
         return ext in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic")
     }
 
-    // Вызов для документов — передаём "*/*", чтобы показать все файлы
+    private fun isVideoOrAudioFile(name: String): Boolean {
+        val ext = name.substringAfterLast('.', "").lowercase()
+        return ext in listOf(
+            "mp4", "mov", "mkv", "webm", "avi",
+            "mp3", "m4a", "wav", "flac", "ogg", "aac"
+        )
+    }
+
+    // ---------- ACTIONS SHEET ----------
+
+    private fun showFileActions(item: FileItem) {
+        val dialog = BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
+        val view = layoutInflater.inflate(R.layout.sheet_file_actions, null)
+        dialog.setContentView(view)
+
+        view.findViewById<View>(R.id.actionRename).setOnClickListener {
+            dialog.dismiss()
+            showRenameDialog(item)
+        }
+
+        view.findViewById<View>(R.id.actionCut).setOnClickListener {
+            dialog.dismiss()
+            cutItem = item
+            Toast.makeText(this, "Вырезано: ${item.name}", Toast.LENGTH_SHORT).show()
+        }
+
+        val pasteView = view.findViewById<View>(R.id.actionPaste)
+        if (cutItem != null) {
+            pasteView.visibility = View.VISIBLE
+            pasteView.setOnClickListener {
+                dialog.dismiss()
+                pasteIntoCurrent()
+            }
+        } else {
+            pasteView.visibility = View.GONE
+        }
+
+        view.findViewById<View>(R.id.actionDelete).setOnClickListener {
+            dialog.dismiss()
+            confirmDelete(item)
+        }
+
+        dialog.show()
+    }
+
+    private fun showRenameDialog(item: FileItem) {
+        val input = EditText(this).apply { setText(item.name) }
+        AlertDialog.Builder(this)
+            .setTitle("Переименовать")
+            .setView(input)
+            .setPositiveButton("OK") { _, _ ->
+                val newName = input.text.toString().trim()
+                if (newName.isNotEmpty() && newName != item.name) {
+                    lifecycleScope.launch {
+                        if (ApiClient.renameItem(item.id, newName)) loadFiles()
+                        else Toast.makeText(this@MainActivity, "Ошибка переименования", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun confirmDelete(item: FileItem) {
+        AlertDialog.Builder(this)
+            .setTitle("Удалить?")
+            .setMessage("«${item.name}» будет удалён безвозвратно.")
+            .setPositiveButton("Удалить") { _, _ ->
+                lifecycleScope.launch {
+                    if (ApiClient.deleteItem(item.id)) loadFiles()
+                    else Toast.makeText(this@MainActivity, "Ошибка удаления", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun pasteIntoCurrent() {
+        val item = cutItem ?: return
+        val newPath = if (currentPath == "/") "/${item.name}" else "${currentPath.trimEnd('/')}/${item.name}"
+        lifecycleScope.launch {
+            if (ApiClient.moveItem(item.id, newPath)) {
+                cutItem = null
+                loadFiles()
+                Toast.makeText(this@MainActivity, "Перемещено", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this@MainActivity, "Ошибка перемещения", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // ---------- UPLOAD SHEET ----------
+
+    private fun showUploadSheet() {
+        val dialog = BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
+        val view = layoutInflater.inflate(R.layout.sheet_upload, null)
+        dialog.setContentView(view)
+
+        view.findViewById<View>(R.id.optionMedia).setOnClickListener {
+            dialog.dismiss()
+            openMediaPicker()
+        }
+        view.findViewById<View>(R.id.optionDocument).setOnClickListener {
+            dialog.dismiss()
+            openDocumentPicker()
+        }
+        view.findViewById<View>(R.id.optionFolder).setOnClickListener {
+            dialog.dismiss()
+            showCreateFolderDialog()
+        }
+        dialog.show()
+    }
+
+    private fun showCreateFolderDialog() {
+        val input = EditText(this).apply { hint = "Имя папки" }
+        AlertDialog.Builder(this)
+            .setTitle("Новая папка")
+            .setView(input)
+            .setPositiveButton("Создать") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isNotEmpty()) {
+                    lifecycleScope.launch {
+                        if (ApiClient.createFolder(currentPath, name)) loadFiles()
+                        else Toast.makeText(this@MainActivity, "Ошибка создания", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
     private fun openDocumentPicker() {
         pickDocument.launch(arrayOf("*/*"))
     }
 
     private fun openMediaPicker() {
-        pickMedia.launch(
-            PickVisualMediaRequest(PickVisualMedia.ImageAndVideo)
-        )
+        pickMedia.launch(PickVisualMediaRequest(PickVisualMedia.ImageAndVideo))
     }
 
     private fun uploadFiles(uris: List<Uri>) {
         if (uris.isEmpty()) return
-
-        val progressToast = Toast.makeText(
-            this,
-            "Загрузка 0/${uris.size}",
-            Toast.LENGTH_LONG
-        )
+        val progressToast = Toast.makeText(this, "Загрузка 0/${uris.size}", Toast.LENGTH_LONG)
         progressToast.show()
 
         lifecycleScope.launch {
@@ -142,36 +282,36 @@ class MainActivity : AppCompatActivity() {
             for ((index, uri) in uris.withIndex()) {
                 progressToast.setText("Загрузка ${index + 1}/${uris.size}")
                 try {
-                    if (ApiClient.uploadFile(this@MainActivity, uri)) {
-                        success++
-                    } else {
-                        android.util.Log.w("Upload", "Server rejected: $uri")
-                    }
+                    if (ApiClient.uploadFile(this@MainActivity, uri, currentPath)) success++
                 } catch (e: Exception) {
                     android.util.Log.e("Upload", "Failed: $uri", e)
                 }
             }
             progressToast.cancel()
-
-            Toast.makeText(
-                this@MainActivity,
-                "Загружено $success из ${uris.size}",
-                Toast.LENGTH_LONG
-            ).show()
-
+            Toast.makeText(this@MainActivity, "Загружено $success из ${uris.size}", Toast.LENGTH_LONG).show()
             loadFiles()
         }
     }
 
+    // ---------- NAVIGATION ----------
+
     private fun navigateTo(path: String) {
-        currentPath = path
+        // path от бэкенда может быть "/123" или "123"
+        val trimmed = path.trim('/')
+        currentPath = if (trimmed.isEmpty()) "/" else "/$trimmed"
         updatePathUi()
         loadFiles()
     }
 
     private fun goUp() {
-        if (currentPath == "/") return
-        currentPath = currentPath.substringBeforeLast('/').ifEmpty { "/" }
+        if (currentPath == "/" || currentPath.isEmpty()) return
+        val trimmed = currentPath.trim('/')
+        if (trimmed.isEmpty()) {
+            currentPath = "/"
+        } else {
+            val parent = trimmed.substringBeforeLast('/', "")
+            currentPath = if (parent.isEmpty()) "/" else "/$parent"
+        }
         updatePathUi()
         loadFiles()
     }
@@ -202,41 +342,6 @@ class MainActivity : AppCompatActivity() {
                 emptyText.text = "Не удалось загрузить"
             } finally {
                 loading.visibility = View.GONE
-            }
-        }
-    }
-
-    private fun showUploadSheet() {
-        val dialog = BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
-        val view = layoutInflater.inflate(R.layout.sheet_upload, null)
-        dialog.setContentView(view)
-
-        view.findViewById<View>(R.id.optionMedia).setOnClickListener {
-            dialog.dismiss()
-            openMediaPicker()
-        }
-
-        view.findViewById<View>(R.id.optionDocument).setOnClickListener {
-            dialog.dismiss()
-            openDocumentPicker()
-        }
-
-        dialog.show()
-    }
-
-    private fun uploadFile(uri: Uri) {
-        Toast.makeText(this, "Загрузка...", Toast.LENGTH_SHORT).show()
-        lifecycleScope.launch {
-            try {
-                val success = ApiClient.uploadFile(this@MainActivity, uri)
-                if (success) {
-                    Toast.makeText(this@MainActivity, "Файл загружен", Toast.LENGTH_SHORT).show()
-                    loadFiles() // обновить список
-                } else {
-                    Toast.makeText(this@MainActivity, "Ошибка загрузки", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                Toast.makeText(this@MainActivity, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }

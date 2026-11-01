@@ -36,7 +36,8 @@ object DownloadHelper {
         return try {
             val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             dm.enqueue(request)
-        } catch (e: Exception) {
+        }  catch (e: Exception) {
+            android.util.Log.e("DownloadHelper", "enqueue failed: url=$url, mime=${getMimeType(fileName)}, name=$fileName", e)
             -1L
         }
     }

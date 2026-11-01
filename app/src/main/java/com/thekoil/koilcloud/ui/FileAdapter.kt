@@ -18,9 +18,13 @@ import com.thekoil.koilcloud.util.getFileIcon
 class FileAdapter(
     private val onPreview: (FileItem) -> Unit,
     private val onDownload: (FileItem) -> Unit,
+    private val onLongClick: (FileItem) -> Unit,
 ) : RecyclerView.Adapter<FileAdapter.VH>() {
 
     private val items = mutableListOf<FileItem>()
+
+
+    fun getCurrentItems(): List<FileItem> = items.toList()
 
     fun submit(list: List<FileItem>) {
         items.clear()
@@ -30,7 +34,7 @@ class FileAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val view = LayoutInflater.from(parent.context)
-            .inflate(R.drawable.item_file, parent, false) // ⬅ layout, не drawable
+            .inflate(R.layout.item_file, parent, false) // ⬅ layout, не drawable
         return VH(view)
     }
 
@@ -65,6 +69,8 @@ class FileAdapter(
             val isImage = item.type != "folder" && ext in listOf(
                 "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic"
             )
+
+            itemView.setOnLongClickListener { onLongClick(item); true }
 
             if (isImage) {
                 icon.visibility = View.GONE

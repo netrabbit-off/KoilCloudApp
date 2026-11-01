@@ -8,4 +8,5 @@
     <color name="text_secondary">#9E9EA7</color>
     <color name="text_tertiary">#63636B</color>
     <color name="border">#2C2C32</color>
+    <color name="danger">#FF453A</color>
 </resources>
