@@ -98,7 +98,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun handlePreview(item: FileItem) {
         when {
-            item.type == "folder" -> navigateTo(item.path)
+            item.type == "folder" -> navigateTo(item.path, item.name)
 
             isImageFile(item.name) -> {
                 val media = adapter.getCurrentItems().filter { isImageFile(it.name) }
@@ -295,10 +295,13 @@ class MainActivity : AppCompatActivity() {
 
     // ---------- NAVIGATION ----------
 
-    private fun navigateTo(path: String) {
-        // path от бэкенда может быть "/123" или "123"
-        val trimmed = path.trim('/')
-        currentPath = if (trimmed.isEmpty()) "/" else "/$trimmed"
+    private fun navigateTo(parentPath: String, name: String) {
+        // "/" + "123" -> "/123"
+        // "/123" + "sub" -> "/123/sub"
+        // "/123/" + "sub" -> "/123/sub"
+        val parent = parentPath.trim('/')
+        val trimmedName = name.trim('/')
+        currentPath = if (parent.isEmpty()) "/$trimmedName" else "/$parent/$trimmedName"
         updatePathUi()
         loadFiles()
     }

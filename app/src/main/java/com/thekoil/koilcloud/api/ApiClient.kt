@@ -55,27 +55,16 @@ object ApiClient {
     }
 
     private fun filterChildren(all: List<FileItem>, parentPath: String): List<FileItem> {
-        // "/" -> "", "/123" -> "123", "/123/" -> "123", "123" -> "123"
-        val normalizedParent = parentPath.trim('/')
+        // Нормализуем текущую папку: "/" -> "/", "/123" -> "/123", "123" -> "/123"
+        val trimmed = parentPath.trim('/')
+        val normalizedParent = if (trimmed.isEmpty()) "/" else "/$trimmed"
 
         return all.filter { item ->
-            // "/123/test.txt" -> "123/test.txt", "123/test.txt" -> "123/test.txt", "/test.txt" -> "test.txt"
-            val itemPath = item.path.trim('/')
+            // Нормализуем path элемента: "/" -> "/", "/123/" -> "/123", "123" -> "/123"
+            val itemTrimmed = item.path.trim('/')
+            val itemParent = if (itemTrimmed.isEmpty()) "/" else "/$itemTrimmed"
 
-            // Родитель = всё до последнего слеша
-            // "123/test.txt" -> "123"
-            // "test.txt"     -> "" (корень)
-            val itemParent = if (itemPath.contains('/')) {
-                itemPath.substringBeforeLast('/')
-            } else {
-                ""
-            }
-
-            // Исключаем саму папку, в которой находимся
-            // Например, для parentPath="/123" элемент с path="/123" не должен показываться
-            val isSelf = itemPath == normalizedParent
-
-            !isSelf && itemParent == normalizedParent
+            itemParent == normalizedParent
         }
     }
 
@@ -93,8 +82,8 @@ object ApiClient {
         val rawName = getFileName(context, uri) ?: "upload_${System.currentTimeMillis()}"
         val safeName = rawName.replace("/", "_")
 
-        // Нормализуем parentPath: всегда с ведущим слешем, без хвостового
-        val normalizedParent = "/" + parentPath.trim('/')
+        val trimmed = parentPath.trim('/')
+        val normalizedParent = if (trimmed.isEmpty()) "/" else "/$trimmed/"
 
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: throw IOException("Cannot open input stream for $uri")
@@ -102,11 +91,10 @@ object ApiClient {
         val fileBody = bytes.toRequestBody("application/octet-stream".toMediaTypeOrNull())
         val multipart = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
-            .addFormDataPart("file", safeName, fileBody)   // только имя, без пути
+            .addFormDataPart("file", safeName, fileBody)
             .build()
 
-        // Путь — в query-параметре, как в curl
-        val url = "$baseUrl/upload?path=$normalizedParent/"
+        val url = "$baseUrl/upload?path=$normalizedParent"
 
         android.util.Log.d("Upload", "url=$url, name=$safeName")
 
@@ -139,16 +127,18 @@ object ApiClient {
      * Поэтому в "path" кладём ИМЯ папки, а не полный путь.
      */
     suspend fun createFolder(parentPath: String, name: String): Boolean = withContext(Dispatchers.IO) {
-        // Нормализуем родителя: "/" -> "", "/123" -> "123", "123" -> "123"
+        // "/" -> "", "/123" -> "123", "123" -> "123"
         val trimmed = parentPath.trim('/')
 
-        // Полный путь новой папки: "/name" в корне, "/123/name" в папке
-        val fullPath = if (trimmed.isEmpty()) "/$name" else "/$trimmed/$name"
+        // Всегда: ведущий + (путь или ничего) + хвостовой
+        // "/"    -> "/"      (корень)
+        // "/123" -> "/123/"  (папка)
+        val normalizedParent = if (trimmed.isEmpty()) "/" else "/$trimmed/"
 
         val body = gson.toJson(
             mapOf(
                 "name" to name,
-                "path" to fullPath,      // ⬅ полный путь, а не просто имя
+                "path" to normalizedParent,   // только расположение, с хвостовым слешем
                 "type" to "folder",
                 "size" to 0,
                 "content" to "",
@@ -156,7 +146,7 @@ object ApiClient {
             )
         )
 
-        android.util.Log.d("CreateFolder", "parentPath=$parentPath -> fullPath=$fullPath")
+        android.util.Log.d("CreateFolder", "parentPath=$parentPath -> path=$normalizedParent, name=$name")
 
         val request = Request.Builder()
             .url("$baseUrl/create_folder")
