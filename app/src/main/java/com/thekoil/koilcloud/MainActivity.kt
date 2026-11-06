@@ -50,6 +50,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Инициализация ApiClient с контекстом для AuthManager
+        ApiClient.init(applicationContext)
+
+        if (!com.thekoil.koilcloud.auth.AuthManager.isLoggedIn(this)) {
+            startActivity(Intent(this, LoginActivity::class.java))
+            finish()
+            return
+        }
+
         setContentView(R.layout.main_activity)
 
         filesList = findViewById(R.id.filesList)
@@ -83,6 +93,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         findViewById<View>(R.id.uploadButton).setOnClickListener { showUploadSheet() }
+        findViewById<View>(R.id.avatar).setOnClickListener { showProfileDialog() }
 
         val used = 47.3 * 1024 * 1024 * 1024
         val total = 128.0 * 1024 * 1024 * 1024
@@ -92,6 +103,20 @@ class MainActivity : AppCompatActivity() {
 
         updatePathUi()
         loadFiles()
+    }
+
+    private fun showProfileDialog() {
+        val login = com.thekoil.koilcloud.auth.AuthManager.getLogin(this) ?: "—"
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Профиль")
+            .setMessage(login)
+            .setPositiveButton("Выйти") { _, _ ->
+                com.thekoil.koilcloud.auth.AuthManager.logout(this)
+                startActivity(Intent(this, LoginActivity::class.java))
+                finish()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
     }
 
     // ---------- PREVIEW ----------

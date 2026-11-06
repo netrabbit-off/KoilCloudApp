@@ -1,8 +1,12 @@
 package com.thekoil.koilcloud.api
 
+import com.thekoil.koilcloud.auth.AuthError
+import com.thekoil.koilcloud.auth.AuthResult
+
 import android.content.Context
 import android.net.Uri
 import com.google.gson.Gson
+import com.thekoil.koilcloud.auth.AuthManager
 import com.thekoil.koilcloud.model.FileItem
 import com.thekoil.koilcloud.model.FilesResponse
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +22,19 @@ import java.util.concurrent.TimeUnit
 
 object ApiClient {
     var baseUrl: String = "http://77.91.66.163:8088"
-    var token: String? = "123"
+    private var appContext: Context? = null
+
+    fun init(context: Context) {
+        appContext = context.applicationContext
+    }
+
+    var token: String?
+        get() = appContext?.let { AuthManager.getToken(it) }
+        set(value) {
+            val ctx = appContext ?: return
+            if (value == null) AuthManager.logout(ctx)
+            else AuthManager.save(ctx, value, AuthManager.getLogin(ctx) ?: "")
+        }
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -31,6 +47,80 @@ object ApiClient {
 
     fun authHeaders(): Map<String, String> =
         token?.let { mapOf("Authorization" to "Bearer $it") } ?: emptyMap()
+
+    // ==================== AUTH ====================
+
+    suspend fun login(login: String, password: String): AuthResult = withContext(Dispatchers.IO) {
+        // TODO: заменить на реальный запрос, когда появится эндпоинт.
+        // val body = gson.toJson(mapOf("login" to login, "password" to password))
+        // val request = Request.Builder()
+        //     .url("$baseUrl/auth/login")
+        //     .post(body.toRequestBody(jsonMedia))
+        //     .build()
+        // try {
+        //     http.newCall(request).execute().use { response ->
+        //         if (response.isSuccessful) {
+        //             val json = gson.fromJson(response.body?.string(), AuthResponse::class.java)
+        //             val token = json.data?.token ?: json.token
+        //             if (token != null) AuthResult.Success(token)
+        //             else AuthResult.Failure(AuthError.UNKNOWN)
+        //         } else {
+        //             AuthResult.Failure(AuthError.INVALID_CREDENTIALS)
+        //         }
+        //     }
+        // } catch (e: Exception) {
+        //     AuthResult.Failure(AuthError.NETWORK)
+        // }
+
+        // Заглушка
+        if (login.isBlank() || password.isBlank()) {
+            AuthResult.Failure(AuthError.INVALID_CREDENTIALS)
+        } else {
+            AuthResult.Success("123")
+        }
+    }
+
+    suspend fun register(login: String, password: String, inviteCode: String): AuthResult = withContext(Dispatchers.IO) {
+        // TODO: заменить на реальный запрос.
+        // val body = gson.toJson(mapOf(
+        //     "login" to login,
+        //     "password" to password,
+        //     "invite" to inviteCode
+        // ))
+        // val request = Request.Builder()
+        //     .url("$baseUrl/auth/register")
+        //     .post(body.toRequestBody(jsonMedia))
+        //     .build()
+        // try {
+        //     http.newCall(request).execute().use { response ->
+        //         when (response.code) {
+        //             200, 201 -> {
+        //                 val json = gson.fromJson(response.body?.string(), AuthResponse::class.java)
+        //                 val token = json.data?.token ?: json.token
+        //                 if (token != null) AuthResult.Success(token)
+        //                 else AuthResult.Failure(AuthError.UNKNOWN)
+        //             }
+        //             409 -> AuthResult.Failure(AuthError.LOGIN_TAKEN)
+        //             403 -> AuthResult.Failure(AuthError.INVALID_INVITE)
+        //             400 -> AuthResult.Failure(AuthError.INVALID_INVITE)
+        //             else -> AuthResult.Failure(AuthError.UNKNOWN)
+        //         }
+        //     }
+        // } catch (e: Exception) {
+        //     AuthResult.Failure(AuthError.NETWORK)
+        // }
+
+        // Заглушка: проверяем код "KOIL2024"
+        if (inviteCode.trim() != "KOIL2024") {
+            AuthResult.Failure(AuthError.INVALID_INVITE)
+        } else if (login.isBlank() || password.isBlank()) {
+            AuthResult.Failure(AuthError.INVALID_CREDENTIALS)
+        } else if (login == "admin") {
+            AuthResult.Failure(AuthError.LOGIN_TAKEN)
+        } else {
+            AuthResult.Success("123")
+        }
+    }
 
     // ==================== READ ====================
 
