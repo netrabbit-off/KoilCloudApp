@@ -31,7 +31,7 @@ object DownloadHelper {
             .setAllowedOverRoaming(true)
 
         // Заголовок авторизации — DownloadManager умеет передавать headers
-        ApiClient.token?.let { request.addRequestHeader("Authorization", "Bearer $it") }
+        ApiClient.accessToken()?.let { request.addRequestHeader("Authorization", "Bearer $it") }
 
         return try {
             val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager

@@ -36,6 +36,9 @@ class ImagePreviewActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        ApiClient.init(applicationContext)
+
         setContentView(R.layout.activity_image_preview)
 
         imageView = findViewById(R.id.previewImage)
@@ -46,7 +49,6 @@ class ImagePreviewActivity : AppCompatActivity() {
         mediaNames = intent.getStringArrayExtra(EXTRA_MEDIA_NAMES)?.toList().orEmpty()
         currentIndex = intent.getIntExtra(EXTRA_MEDIA_INDEX, 0)
 
-        // Если список не передан (старый вызов) — используем одиночный файл
         if (mediaIds.isEmpty()) {
             val id = intent.getStringExtra(EXTRA_FILE_ID)
             val name = intent.getStringExtra(EXTRA_FILE_NAME).orEmpty()
@@ -78,7 +80,7 @@ class ImagePreviewActivity : AppCompatActivity() {
         title.text = name
 
         val imageUrl = ApiClient.downloadUrl(id)
-        val token = ApiClient.token
+        val token = ApiClient.accessToken()
         val loadModel: Any = if (token.isNullOrBlank()) {
             imageUrl
         } else {

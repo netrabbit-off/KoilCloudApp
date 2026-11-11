@@ -19,6 +19,9 @@ class RegisterActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        ApiClient.init(applicationContext)
+
         setContentView(R.layout.activity_register)
 
         val loginField = findViewById<EditText>(R.id.registerLogin)
@@ -67,7 +70,13 @@ class RegisterActivity : AppCompatActivity() {
 
                 when (result) {
                     is AuthResult.Success -> {
-                        AuthManager.save(this@RegisterActivity, result.token, l)
+                        AuthManager.save(
+                            context = this@RegisterActivity,
+                            access = result.accessToken,
+                            refresh = result.refreshToken,
+                            login = l,
+                            userId = result.userId
+                        )
                         startActivity(Intent(this@RegisterActivity, MainActivity::class.java))
                         finishAffinity()
                     }
@@ -84,6 +93,13 @@ class RegisterActivity : AppCompatActivity() {
                             AuthError.INVALID_CREDENTIALS -> {
                                 loginError.text = "Неправильный логин или пароль"
                                 loginError.visibility = View.VISIBLE
+                            }
+                            AuthError.UNAUTHORIZED -> {
+                                Toast.makeText(
+                                    this@RegisterActivity,
+                                    "Сессия истекла, войдите снова",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                             AuthError.NETWORK -> {
                                 Toast.makeText(this@RegisterActivity, "Нет соединения", Toast.LENGTH_SHORT).show()

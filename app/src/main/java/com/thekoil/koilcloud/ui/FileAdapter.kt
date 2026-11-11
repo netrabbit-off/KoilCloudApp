@@ -77,7 +77,7 @@ class FileAdapter(
                 thumbnail.visibility = View.VISIBLE
 
                 val imageUrl = ApiClient.downloadUrl(item.id)
-                val token = ApiClient.token
+                val token = ApiClient.accessToken()
 
                 // GlideUrl с заголовком Authorization, если токен есть
                 val loadModel: Any = if (token.isNullOrBlank()) {

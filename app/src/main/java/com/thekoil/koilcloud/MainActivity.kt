@@ -20,6 +20,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.thekoil.koilcloud.api.ApiClient
+import com.thekoil.koilcloud.auth.AuthManager
 import com.thekoil.koilcloud.model.FileItem
 import com.thekoil.koilcloud.ui.FileAdapter
 import com.thekoil.koilcloud.util.DownloadHelper
@@ -50,6 +51,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ApiClient.init(applicationContext)
+
+        if (!AuthManager.isLoggedIn(this)) {
+            startActivity(Intent(this, LoginActivity::class.java))
+            finish()
+            return
+        }
+
+        setContentView(R.layout.main_activity)
 
         // Инициализация ApiClient с контекстом для AuthManager
         ApiClient.init(applicationContext)
@@ -103,6 +113,15 @@ class MainActivity : AppCompatActivity() {
 
         updatePathUi()
         loadFiles()
+
+        lifecycleScope.launch {
+            val ok = ApiClient.ensureAuthorized()
+            if (!ok) {
+                AuthManager.logout(this@MainActivity)
+                startActivity(Intent(this@MainActivity, LoginActivity::class.java))
+                finish()
+            }
+        }
     }
 
     private fun showProfileDialog() {

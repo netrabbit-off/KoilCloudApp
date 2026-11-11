@@ -20,6 +20,9 @@ class LoginActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        ApiClient.init(applicationContext)
+
         setContentView(R.layout.activity_login)
 
         if (AuthManager.isLoggedIn(this)) {
@@ -33,7 +36,6 @@ class LoginActivity : AppCompatActivity() {
         val loginError = findViewById<TextView>(R.id.loginError)
         val passwordError = findViewById<TextView>(R.id.loginPasswordError)
 
-        // Скрываем ошибку при вводе
         loginField.doAfterTextChanged { hideError(loginError) }
         password.doAfterTextChanged { hideError(passwordError) }
 
@@ -66,7 +68,13 @@ class LoginActivity : AppCompatActivity() {
 
                 when (result) {
                     is AuthResult.Success -> {
-                        AuthManager.save(this@LoginActivity, result.token, l)
+                        AuthManager.save(
+                            context = this@LoginActivity,
+                            access = result.accessToken,
+                            refresh = result.refreshToken,
+                            login = l,
+                            userId = result.userId
+                        )
                         goToMain()
                     }
                     is AuthResult.Failure -> {
@@ -77,6 +85,8 @@ class LoginActivity : AppCompatActivity() {
                                 showError(loginError, "Такой логин уже занят")
                             AuthError.INVALID_INVITE ->
                                 showError(loginError, "Неверный пригласительный код")
+                            AuthError.UNAUTHORIZED ->
+                                showError(loginError, "Сессия истекла, войдите снова")
                             AuthError.NETWORK ->
                                 Toast.makeText(this@LoginActivity, "Нет соединения", Toast.LENGTH_SHORT).show()
                             AuthError.UNKNOWN ->
