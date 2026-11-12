@@ -11,6 +11,8 @@ import com.thekoil.koilcloud.model.AuthResponse
 import com.thekoil.koilcloud.model.FileItem
 import com.thekoil.koilcloud.model.FilesResponse
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -43,6 +45,9 @@ object ApiClient {
 
     private val gson = Gson()
     private val jsonMedia = "application/json".toMediaType()
+
+    /** Гарантирует, что одновременно идёт только один refresh. */
+    private val refreshMutex = Mutex()
 
     fun authHeaders(): Map<String, String> =
         accessToken()?.let { mapOf("Authorization" to "Bearer $it") } ?: emptyMap()
@@ -124,57 +129,96 @@ object ApiClient {
     }
 
     /**
-     * Обновляет access через POST /update на auth-сервере.
-     * Возвращает новый access или null. Сохраняет токены в AuthManager.
+     * Обновляет access через POST /update.
+     *
+     * @param failedAccess access, с которым запрос получил 401. Если пока мы
+     *        ждали мьютекс, другой поток уже обновил токен — вернёт его, не
+     *        дёргая сервер. Это защищает от гонки, когда два параллельных
+     *        запроса одновременно получили 401, и бэкенд инвалидирует refresh
+     *        после первого использования.
+     *
+     * @return новый access или null, если обновить не удалось.
      */
-    suspend fun refreshAccessToken(): String? = withContext(Dispatchers.IO) {
-        val refresh = refreshToken() ?: return@withContext null
-        val body = gson.toJson(mapOf("refresh_token" to refresh))
-        val request = Request.Builder()
-            .url("$authUrl/update")
-            .post(body.toRequestBody(jsonMedia))
-            .build()
+    private suspend fun refreshAccessToken(failedAccess: String?): String? = refreshMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val currentAccess = accessToken()
 
-        try {
-            http.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    android.util.Log.w("Auth", "refresh failed: code=${response.code}")
-                    return@withContext null
-                }
-                val text = response.body?.string().orEmpty()
-                val json = try {
-                    gson.fromJson(text, AuthResponse::class.java)
-                } catch (e: Exception) {
-                    null
-                }
-                val newAccess = json?.accessToken
-                val newRefresh = json?.refreshToken
-                if (newAccess.isNullOrBlank() || newRefresh.isNullOrBlank()) {
-                    return@withContext null
-                }
-                appContext?.let { AuthManager.saveTokens(it, newAccess, newRefresh) }
-                android.util.Log.d("Auth", "refresh success")
-                newAccess
+            // Кто-то уже обновил, пока мы ждали лок
+            if (!failedAccess.isNullOrBlank()
+                && !currentAccess.isNullOrBlank()
+                && currentAccess != failedAccess
+            ) {
+                android.util.Log.d("Auth", "refresh skipped: already updated by other request")
+                return@withContext currentAccess
             }
-        } catch (e: Exception) {
-            android.util.Log.e("Auth", "refresh error", e)
-            null
+
+            val refresh = refreshToken() ?: run {
+                android.util.Log.w("Auth", "refresh: no refresh token")
+                return@withContext null
+            }
+
+            val body = gson.toJson(mapOf("refresh_token" to refresh))
+            android.util.Log.d("Auth", "refresh request: refresh=${refresh.take(8)}...")
+
+            val request = Request.Builder()
+                .url("$authUrl/update")
+                .post(body.toRequestBody(jsonMedia))
+                .build()
+
+            try {
+                http.newCall(request).execute().use { response ->
+                    val text = response.body?.string().orEmpty()
+                    android.util.Log.d("Auth", "refresh response: code=${response.code}, body=$text")
+
+                    if (!response.isSuccessful) {
+                        return@withContext null
+                    }
+
+                    val json = try {
+                        gson.fromJson(text, AuthResponse::class.java)
+                    } catch (e: Exception) {
+                        android.util.Log.e("Auth", "refresh parse error", e)
+                        null
+                    }
+
+                    val newAccess = json?.accessToken
+                    val newRefresh = json?.refreshToken
+                    if (newAccess.isNullOrBlank() || newRefresh.isNullOrBlank()) {
+                        android.util.Log.w(
+                            "Auth",
+                            "refresh parsed empty: access=${newAccess?.take(8)}, refresh=${newRefresh?.take(8)}"
+                        )
+                        return@withContext null
+                    }
+
+                    appContext?.let { AuthManager.saveTokens(it, newAccess, newRefresh) }
+                    android.util.Log.d("Auth", "refresh success")
+                    newAccess
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Auth", "refresh error", e)
+                null
+            }
         }
     }
 
     /**
-     * Выполняет запрос с access token. Если 401 — обновляет access и повторяет
+     * Выполняет запрос с access token. При 401 — обновляет access и повторяет
      * запрос один раз. Бросает UnauthorizedException, если refresh не удался.
      */
     private suspend fun executeWithAuth(builder: (String) -> Request): Response =
         withContext(Dispatchers.IO) {
-            val access = accessToken() ?: throw UnauthorizedException()
+            val access = accessToken() ?: run {
+                android.util.Log.w("Auth", "executeWithAuth: no access token")
+                throw UnauthorizedException()
+            }
 
             val first = http.newCall(builder(access)).execute()
             if (first.code != 401) return@withContext first
             first.close()
 
-            val newAccess = refreshAccessToken() ?: throw UnauthorizedException()
+            android.util.Log.d("Auth", "executeWithAuth: got 401, trying refresh")
+            val newAccess = refreshAccessToken(access) ?: throw UnauthorizedException()
 
             http.newCall(builder(newAccess)).execute().also { second ->
                 if (second.code == 401) {
@@ -190,7 +234,10 @@ object ApiClient {
      */
     suspend fun ensureAuthorized(): Boolean = withContext(Dispatchers.IO) {
         val access = accessToken()
-        if (access.isNullOrBlank()) return@withContext false
+        if (access.isNullOrBlank()) {
+            android.util.Log.w("Auth", "ensureAuthorized: no access token stored")
+            return@withContext false
+        }
 
         val check = Request.Builder()
             .url("$authUrl/check")
@@ -200,10 +247,11 @@ object ApiClient {
 
         try {
             http.newCall(check).execute().use { response ->
+                android.util.Log.d("Auth", "ensureAuthorized: check code=${response.code}")
                 if (response.isSuccessful) return@withContext true
                 if (response.code != 401) return@withContext false
             }
-            refreshAccessToken() != null
+            refreshAccessToken(access) != null
         } catch (e: Exception) {
             android.util.Log.e("Auth", "ensureAuthorized failed", e)
             false

@@ -97,11 +97,14 @@ class MainActivity : AppCompatActivity() {
         findViewById<ProgressBar>(R.id.storageProgress).progress = ((used / total) * 100).toInt()
 
         updatePathUi()
-        loadFiles()
 
         lifecycleScope.launch {
             val ok = ApiClient.ensureAuthorized()
-            if (!ok) handleUnauthorized()
+            if (!ok) {
+                handleUnauthorized()
+                return@launch
+            }
+            loadFiles()
         }
     }
 
