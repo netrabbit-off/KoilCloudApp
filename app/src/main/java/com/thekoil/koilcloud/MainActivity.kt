@@ -42,6 +42,10 @@ class MainActivity : AppCompatActivity() {
     private var loadingJob: Job? = null
     private var cutItem: FileItem? = null
 
+    private var uploadDialog: AlertDialog? = null
+    private var uploadProgressBar: ProgressBar? = null
+    private var uploadProgressText: TextView? = null
+
     private val pickMedia = registerForActivityResult(PickMultipleVisualMedia(10)) { uris: List<Uri> ->
         if (uris.isNotEmpty()) uploadFiles(uris)
     }
@@ -215,6 +219,48 @@ class MainActivity : AppCompatActivity() {
 
     // ---------- ACTIONS SHEET ----------
 
+    private fun showUploadProgressDialog() {
+        val container = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(48, 32, 48, 16)
+        }
+
+        uploadProgressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            progress = 0
+        }
+
+        uploadProgressText = TextView(this).apply {
+            text = "0%"
+            setPadding(0, 16, 0, 0)
+            textSize = 14f
+        }
+
+        container.addView(uploadProgressBar)
+        container.addView(uploadProgressText)
+
+        uploadDialog = AlertDialog.Builder(this)
+            .setTitle("Загрузка")
+            .setView(container)
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun updateUploadProgress(written: Long, total: Long) {
+        runOnUiThread {
+            val percent = if (total > 0) ((written * 100) / total).toInt().coerceIn(0, 100) else 0
+            uploadProgressBar?.progress = percent
+            uploadProgressText?.text = "$percent%  (${formatBytes(written)} / ${formatBytes(total)})"
+        }
+    }
+
+    private fun dismissUploadProgressDialog() {
+        uploadDialog?.dismiss()
+        uploadDialog = null
+        uploadProgressBar = null
+        uploadProgressText = null
+    }
+
     private fun showFileActions(item: FileItem) {
         val dialog = BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
         val view = layoutInflater.inflate(R.layout.sheet_file_actions, null)
@@ -369,28 +415,28 @@ class MainActivity : AppCompatActivity() {
 
     private fun uploadFiles(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        val progressToast = Toast.makeText(this, "Загрузка 0/${uris.size}", Toast.LENGTH_LONG)
-        progressToast.show()
+        showUploadProgressDialog()
 
         lifecycleScope.launch {
             var success = 0
             for ((index, uri) in uris.withIndex()) {
-                progressToast.setText("Загрузка ${index + 1}/${uris.size}")
                 try {
-                    if (ApiClient.uploadFile(this@MainActivity, uri, currentPath)) success++
+                    val ok = ApiClient.uploadFile(
+                        context = this@MainActivity,
+                        uri = uri,
+                        parentPath = currentPath,
+                        onProgress = { written, total -> updateUploadProgress(written, total) }
+                    )
+                    if (ok) success++
                 } catch (e: UnauthorizedException) {
-                    progressToast.cancel()
+                    dismissUploadProgressDialog()
                     handleUnauthorized()
                     return@launch
                 } catch (e: Exception) {
                     android.util.Log.e("Upload", "Failed: $uri", e)
                 }
             }
-            progressToast.cancel()
-            Toast.makeText(this@MainActivity, "Загружено $success из ${uris.size}", Toast.LENGTH_LONG).show()
-            loadFiles()
-
-            progressToast.cancel()
+            dismissUploadProgressDialog()
             Toast.makeText(this@MainActivity, "Загружено $success из ${uris.size}", Toast.LENGTH_LONG).show()
             loadFiles()
             refreshStorage()

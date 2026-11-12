@@ -10,6 +10,7 @@ import com.thekoil.koilcloud.auth.UnauthorizedException
 import com.thekoil.koilcloud.model.AuthResponse
 import com.thekoil.koilcloud.model.FileItem
 import com.thekoil.koilcloud.model.FilesResponse
+import com.thekoil.koilcloud.util.ProgressRequestBody
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -19,8 +20,11 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okio.BufferedSink
+import okio.source
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -38,9 +42,9 @@ object ApiClient {
     fun refreshToken(): String? = appContext?.let { AuthManager.getRefreshToken(it) }
 
     private val http = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(0, TimeUnit.SECONDS)  // 0 = без таймаута на запись
         .build()
 
     private val gson = Gson()
@@ -335,21 +339,39 @@ object ApiClient {
 
     // ==================== UPLOAD ====================
 
-    suspend fun uploadFile(context: Context, uri: Uri, parentPath: String = "/"): Boolean = withContext(Dispatchers.IO) {
+    suspend fun uploadFile(
+        context: Context,
+        uri: Uri,
+        parentPath: String = "/",
+        onProgress: ((bytesWritten: Long, totalBytes: Long) -> Unit)? = null
+    ): Boolean = withContext(Dispatchers.IO) {
         val rawName = getFileName(context, uri) ?: "upload_${System.currentTimeMillis()}"
         val safeName = rawName.replace("/", "_")
 
         val trimmed = parentPath.trim('/')
         val normalizedParent = if (trimmed.isEmpty()) "/" else "/$trimmed"
 
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw IOException("Cannot open input stream for $uri")
-
         val url = "$baseUrl/upload?path=$normalizedParent/"
         android.util.Log.d("Upload", "url=$url, name=$safeName")
 
         val response = executeWithAuth { access ->
-            val fileBody = bytes.toRequestBody("application/octet-stream".toMediaTypeOrNull())
+            val fileBody = if (onProgress != null) {
+                ProgressRequestBody(context, uri) { written, total ->
+                    onProgress(written, total)
+                }
+            } else {
+                // fallback без прогресса — тоже потоковый
+                object : RequestBody() {
+                    override fun contentType() = "application/octet-stream".toMediaTypeOrNull()
+                    override fun contentLength(): Long = -1L
+                    override fun writeTo(sink: BufferedSink) {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            sink.writeAll(input.source())
+                        }
+                    }
+                }
+            }
+
             val multipart = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("file", safeName, fileBody)
