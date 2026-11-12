@@ -21,6 +21,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.thekoil.koilcloud.api.ApiClient
 import com.thekoil.koilcloud.auth.AuthManager
+import com.thekoil.koilcloud.auth.UnauthorizedException
 import com.thekoil.koilcloud.model.FileItem
 import com.thekoil.koilcloud.ui.FileAdapter
 import com.thekoil.koilcloud.util.DownloadHelper
@@ -51,22 +52,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         ApiClient.init(applicationContext)
 
         if (!AuthManager.isLoggedIn(this)) {
-            startActivity(Intent(this, LoginActivity::class.java))
-            finish()
-            return
-        }
-
-        setContentView(R.layout.main_activity)
-
-        // Инициализация ApiClient с контекстом для AuthManager
-        ApiClient.init(applicationContext)
-
-        if (!com.thekoil.koilcloud.auth.AuthManager.isLoggedIn(this)) {
-            startActivity(Intent(this, LoginActivity::class.java))
-            finish()
+            goToLogin()
             return
         }
 
@@ -80,12 +70,7 @@ class MainActivity : AppCompatActivity() {
 
         adapter = FileAdapter(
             onPreview = { item -> handlePreview(item) },
-            onDownload = { item ->
-                val id = DownloadHelper.download(this, item.id, item.name)
-                if (id == -1L) {
-                    Toast.makeText(this, "Ошибка скачивания", Toast.LENGTH_SHORT).show()
-                }
-            },
+            onDownload = { item -> downloadItem(item) },
             onLongClick = { item -> showFileActions(item) }
         )
         filesList.layoutManager = LinearLayoutManager(this)
@@ -116,23 +101,30 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             val ok = ApiClient.ensureAuthorized()
-            if (!ok) {
-                AuthManager.logout(this@MainActivity)
-                startActivity(Intent(this@MainActivity, LoginActivity::class.java))
-                finish()
-            }
+            if (!ok) handleUnauthorized()
         }
     }
 
+    // ---------- AUTH ----------
+
+    private fun goToLogin() {
+        startActivity(Intent(this, LoginActivity::class.java))
+        finish()
+    }
+
+    private fun handleUnauthorized() {
+        AuthManager.logout(this)
+        goToLogin()
+    }
+
     private fun showProfileDialog() {
-        val login = com.thekoil.koilcloud.auth.AuthManager.getLogin(this) ?: "—"
-        android.app.AlertDialog.Builder(this)
+        val login = AuthManager.getLogin(this) ?: "—"
+        AlertDialog.Builder(this)
             .setTitle("Профиль")
             .setMessage(login)
             .setPositiveButton("Выйти") { _, _ ->
-                com.thekoil.koilcloud.auth.AuthManager.logout(this)
-                startActivity(Intent(this, LoginActivity::class.java))
-                finish()
+                AuthManager.logout(this)
+                goToLogin()
             }
             .setNegativeButton("Отмена", null)
             .show()
@@ -185,6 +177,21 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    // ---------- DOWNLOAD ----------
+
+    private fun downloadItem(item: FileItem) {
+        lifecycleScope.launch {
+            if (!ApiClient.ensureAuthorized()) {
+                handleUnauthorized()
+                return@launch
+            }
+            val id = DownloadHelper.download(this@MainActivity, item.id, item.name)
+            if (id == -1L) {
+                Toast.makeText(this@MainActivity, "Ошибка скачивания", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     // ---------- ACTIONS SHEET ----------
 
     private fun showFileActions(item: FileItem) {
@@ -231,8 +238,12 @@ class MainActivity : AppCompatActivity() {
                 val newName = input.text.toString().trim()
                 if (newName.isNotEmpty() && newName != item.name) {
                     lifecycleScope.launch {
-                        if (ApiClient.renameItem(item.id, newName)) loadFiles()
-                        else Toast.makeText(this@MainActivity, "Ошибка переименования", Toast.LENGTH_SHORT).show()
+                        try {
+                            if (ApiClient.renameItem(item.id, newName)) loadFiles()
+                            else Toast.makeText(this@MainActivity, "Ошибка переименования", Toast.LENGTH_SHORT).show()
+                        } catch (e: UnauthorizedException) {
+                            handleUnauthorized()
+                        }
                     }
                 }
             }
@@ -246,8 +257,12 @@ class MainActivity : AppCompatActivity() {
             .setMessage("«${item.name}» будет удалён безвозвратно.")
             .setPositiveButton("Удалить") { _, _ ->
                 lifecycleScope.launch {
-                    if (ApiClient.deleteItem(item.id)) loadFiles()
-                    else Toast.makeText(this@MainActivity, "Ошибка удаления", Toast.LENGTH_SHORT).show()
+                    try {
+                        if (ApiClient.deleteItem(item.id)) loadFiles()
+                        else Toast.makeText(this@MainActivity, "Ошибка удаления", Toast.LENGTH_SHORT).show()
+                    } catch (e: UnauthorizedException) {
+                        handleUnauthorized()
+                    }
                 }
             }
             .setNegativeButton("Отмена", null)
@@ -258,12 +273,16 @@ class MainActivity : AppCompatActivity() {
         val item = cutItem ?: return
         val newPath = if (currentPath == "/") "/${item.name}" else "${currentPath.trimEnd('/')}/${item.name}"
         lifecycleScope.launch {
-            if (ApiClient.moveItem(item.id, newPath)) {
-                cutItem = null
-                loadFiles()
-                Toast.makeText(this@MainActivity, "Перемещено", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this@MainActivity, "Ошибка перемещения", Toast.LENGTH_SHORT).show()
+            try {
+                if (ApiClient.moveItem(item.id, newPath)) {
+                    cutItem = null
+                    loadFiles()
+                    Toast.makeText(this@MainActivity, "Перемещено", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this@MainActivity, "Ошибка перемещения", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: UnauthorizedException) {
+                handleUnauthorized()
             }
         }
     }
@@ -299,8 +318,12 @@ class MainActivity : AppCompatActivity() {
                 val name = input.text.toString().trim()
                 if (name.isNotEmpty()) {
                     lifecycleScope.launch {
-                        if (ApiClient.createFolder(currentPath, name)) loadFiles()
-                        else Toast.makeText(this@MainActivity, "Ошибка создания", Toast.LENGTH_SHORT).show()
+                        try {
+                            if (ApiClient.createFolder(currentPath, name)) loadFiles()
+                            else Toast.makeText(this@MainActivity, "Ошибка создания", Toast.LENGTH_SHORT).show()
+                        } catch (e: UnauthorizedException) {
+                            handleUnauthorized()
+                        }
                     }
                 }
             }
@@ -327,6 +350,10 @@ class MainActivity : AppCompatActivity() {
                 progressToast.setText("Загрузка ${index + 1}/${uris.size}")
                 try {
                     if (ApiClient.uploadFile(this@MainActivity, uri, currentPath)) success++
+                } catch (e: UnauthorizedException) {
+                    progressToast.cancel()
+                    handleUnauthorized()
+                    return@launch
                 } catch (e: Exception) {
                     android.util.Log.e("Upload", "Failed: $uri", e)
                 }
@@ -340,9 +367,6 @@ class MainActivity : AppCompatActivity() {
     // ---------- NAVIGATION ----------
 
     private fun navigateTo(parentPath: String, name: String) {
-        // "/" + "123" -> "/123"
-        // "/123" + "sub" -> "/123/sub"
-        // "/123/" + "sub" -> "/123/sub"
         val parent = parentPath.trim('/')
         val trimmedName = name.trim('/')
         currentPath = if (parent.isEmpty()) "/$trimmedName" else "/$parent/$trimmedName"
@@ -383,6 +407,8 @@ class MainActivity : AppCompatActivity() {
                     emptyText.visibility = View.VISIBLE
                     emptyText.text = "Папка пуста"
                 }
+            } catch (e: UnauthorizedException) {
+                handleUnauthorized()
             } catch (e: Exception) {
                 Toast.makeText(this@MainActivity, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
                 emptyText.visibility = View.VISIBLE
