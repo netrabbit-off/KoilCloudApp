@@ -90,12 +90,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.uploadButton).setOnClickListener { showUploadSheet() }
         findViewById<View>(R.id.avatar).setOnClickListener { showProfileDialog() }
 
-        val used = 47.3 * 1024 * 1024 * 1024
-        val total = 128.0 * 1024 * 1024 * 1024
-        findViewById<TextView>(R.id.storageRemaining).text = "${formatBytes((total - used).toLong())} free"
-        findViewById<TextView>(R.id.storageDetail).text = "${formatBytes(used.toLong())} / ${formatBytes(total.toLong())}"
-        findViewById<ProgressBar>(R.id.storageProgress).progress = ((used / total) * 100).toInt()
-
         updatePathUi()
 
         lifecycleScope.launch {
@@ -105,6 +99,30 @@ class MainActivity : AppCompatActivity() {
                 return@launch
             }
             loadFiles()
+            refreshStorage()
+        }
+    }
+
+    private fun refreshStorage() {
+        lifecycleScope.launch {
+            try {
+                val used = ApiClient.getUsedStorage()
+                val total = ApiClient.TOTAL_STORAGE_BYTES
+                val remaining = (total - used).coerceAtLeast(0)
+
+                findViewById<TextView>(R.id.storageRemaining).text = "${formatBytes(remaining)} free"
+                findViewById<TextView>(R.id.storageDetail).text = "${formatBytes(used)} / ${formatBytes(total)}"
+                findViewById<ProgressBar>(R.id.storageProgress).progress =
+                    if (total > 0) ((used * 100) / total).toInt().coerceIn(0, 100) else 0
+            } catch (e: UnauthorizedException) {
+                handleUnauthorized()
+            } catch (e: Exception) {
+                android.util.Log.e("Storage", "refreshStorage failed", e)
+                // при ошибке показываем нули, чтобы не висели старые данные
+                findViewById<TextView>(R.id.storageRemaining).text = "— free"
+                findViewById<TextView>(R.id.storageDetail).text = "— / ${formatBytes(ApiClient.TOTAL_STORAGE_BYTES)}"
+                findViewById<ProgressBar>(R.id.storageProgress).progress = 0
+            }
         }
     }
 
@@ -261,7 +279,14 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Удалить") { _, _ ->
                 lifecycleScope.launch {
                     try {
-                        if (ApiClient.deleteItem(item.id)) loadFiles()
+                        if (ApiClient.deleteItem(item.id)) {
+                            if (ApiClient.deleteItem(item.id)) {
+                                loadFiles()
+                                refreshStorage()
+                            } else {
+                                Toast.makeText(this@MainActivity, "Ошибка удаления", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                         else Toast.makeText(this@MainActivity, "Ошибка удаления", Toast.LENGTH_SHORT).show()
                     } catch (e: UnauthorizedException) {
                         handleUnauthorized()
@@ -364,6 +389,11 @@ class MainActivity : AppCompatActivity() {
             progressToast.cancel()
             Toast.makeText(this@MainActivity, "Загружено $success из ${uris.size}", Toast.LENGTH_LONG).show()
             loadFiles()
+
+            progressToast.cancel()
+            Toast.makeText(this@MainActivity, "Загружено $success из ${uris.size}", Toast.LENGTH_LONG).show()
+            loadFiles()
+            refreshStorage()
         }
     }
 

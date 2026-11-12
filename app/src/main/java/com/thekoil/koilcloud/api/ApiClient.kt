@@ -52,6 +52,31 @@ object ApiClient {
     fun authHeaders(): Map<String, String> =
         accessToken()?.let { mapOf("Authorization" to "Bearer $it") } ?: emptyMap()
 
+    // TODO: заменить на значение из API, когда появится эндпоинт
+    const val TOTAL_STORAGE_BYTES: Long = 100 * 1024 * 1024  // 100MB
+
+    /**
+     * Возвращает сумму размеров всех файлов (папки не считаются).
+     * Использует тот же /files, что и getFiles, но берёт все записи,
+     * а не только детей текущей папки.
+     */
+    suspend fun getUsedStorage(): Long = withContext(Dispatchers.IO) {
+        val response = executeWithAuth { access ->
+            Request.Builder()
+                .url("$baseUrl/files")
+                .addHeader("Authorization", "Bearer $access")
+                .get()
+                .build()
+        }
+
+        response.use { r ->
+            if (!r.isSuccessful) error("HTTP ${r.code}")
+            val body = r.body?.string() ?: error("Empty body")
+            val all = gson.fromJson(body, FilesResponse::class.java).data ?: emptyList()
+            all.filter { it.type != "folder" }.sumOf { it.size }
+        }
+    }
+
     // ==================== AUTH ====================
 
     suspend fun login(login: String, password: String): AuthResult = withContext(Dispatchers.IO) {
