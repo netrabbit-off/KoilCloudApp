@@ -10,6 +10,7 @@ import com.thekoil.koilcloud.auth.UnauthorizedException
 import com.thekoil.koilcloud.model.AuthResponse
 import com.thekoil.koilcloud.model.FileItem
 import com.thekoil.koilcloud.model.FilesResponse
+import com.thekoil.koilcloud.model.User
 import com.thekoil.koilcloud.util.ProgressRequestBody
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -83,8 +84,37 @@ object ApiClient {
 
     // ==================== AUTH ====================
 
+    suspend fun getMe(): User? = withContext(Dispatchers.IO) {
+        android.util.Log.d("Profile", "getMe: access=${accessToken()?.take(8)}, url=$authUrl/get_me")
+        try {
+            val response = executeWithAuth { access ->
+                Request.Builder()
+                    .url("$authUrl/get_me")
+                    .addHeader("Authorization", "Bearer $access")
+                    .get()
+                    .build()
+            }
+            response.use { r ->
+                android.util.Log.d("Profile", "getMe: code=${r.code}")
+                if (!r.isSuccessful) {
+                    android.util.Log.w("Profile", "getMe failed: code=${r.code}, body=${r.body?.string()}")
+                    return@withContext null
+                }
+                val body = r.body?.string().orEmpty()
+                android.util.Log.d("Profile", "getMe body=$body")
+                gson.fromJson(body, User::class.java)
+            }
+        } catch (e: UnauthorizedException) {
+            android.util.Log.w("Profile", "getMe unauthorized", e)
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.e("Profile", "getMe error", e)
+            null
+        }
+    }
+
     suspend fun login(login: String, password: String): AuthResult = withContext(Dispatchers.IO) {
-        val body = gson.toJson(mapOf("user" to login, "password" to password))
+        val body = gson.toJson(mapOf("login" to login, "password" to password))
         val request = Request.Builder()
             .url("$authUrl/login")
             .post(body.toRequestBody(jsonMedia))
@@ -120,7 +150,7 @@ object ApiClient {
     suspend fun register(login: String, password: String, inviteCode: String): AuthResult = withContext(Dispatchers.IO) {
         val body = gson.toJson(
             mapOf(
-                "user" to login,
+                "login" to login,
                 "password" to password,
                 "invite" to inviteCode
             )

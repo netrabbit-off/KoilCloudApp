@@ -71,9 +71,7 @@ class LoginActivity : AppCompatActivity() {
                         AuthManager.save(
                             context = this@LoginActivity,
                             access = result.accessToken,
-                            refresh = result.refreshToken,
-                            login = l,
-                            userId = result.userId
+                            refresh = result.refreshToken
                         )
                         goToMain()
                     }

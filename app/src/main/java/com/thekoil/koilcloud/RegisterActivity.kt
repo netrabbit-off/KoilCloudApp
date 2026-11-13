@@ -73,9 +73,7 @@ class RegisterActivity : AppCompatActivity() {
                         AuthManager.save(
                             context = this@RegisterActivity,
                             access = result.accessToken,
-                            refresh = result.refreshToken,
-                            login = l,
-                            userId = result.userId
+                            refresh = result.refreshToken
                         )
                         startActivity(Intent(this@RegisterActivity, MainActivity::class.java))
                         finishAffinity()

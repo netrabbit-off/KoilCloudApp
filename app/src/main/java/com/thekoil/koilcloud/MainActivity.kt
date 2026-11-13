@@ -143,16 +143,44 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showProfileDialog() {
-        val login = AuthManager.getLogin(this) ?: "—"
-        AlertDialog.Builder(this)
-            .setTitle("Профиль")
-            .setMessage(login)
-            .setPositiveButton("Выйти") { _, _ ->
-                AuthManager.logout(this)
-                goToLogin()
+        val dialog = BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
+        val view = layoutInflater.inflate(R.layout.sheet_profile, null)
+        dialog.setContentView(view)
+
+        val loginView = view.findViewById<TextView>(R.id.profileLogin)
+        val avatarView = view.findViewById<TextView>(R.id.profileAvatar)
+        val idView = view.findViewById<TextView>(R.id.profileId)
+
+        loginView.text = "Загрузка..."
+        idView.text = "—"
+
+        view.findViewById<View>(R.id.profileLogout).setOnClickListener {
+            dialog.dismiss()
+            AuthManager.logout(this)
+            goToLogin()
+        }
+
+        dialog.show()
+
+        lifecycleScope.launch {
+            try {
+                val user = ApiClient.getMe()
+                if (user == null) {
+                    loginView.text = "Не удалось загрузить"
+                    return@launch
+                }
+                val login = user.login
+                loginView.text = login
+                avatarView.text = login?.firstOrNull()?.uppercase() ?: "?"
+                idView.text = user.id ?: "—"
+            } catch (e: UnauthorizedException) {
+                dialog.dismiss()
+                handleUnauthorized()
+            } catch (e: Exception) {
+                android.util.Log.e("Profile", "load failed", e)
+                loginView.text = "Ошибка загрузки"
             }
-            .setNegativeButton("Отмена", null)
-            .show()
+        }
     }
 
     // ---------- PREVIEW ----------

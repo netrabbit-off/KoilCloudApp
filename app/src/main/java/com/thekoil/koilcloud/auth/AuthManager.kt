@@ -12,12 +12,10 @@ object AuthManager {
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    fun save(context: Context, access: String, refresh: String, login: String, userId: String? = null) {
+    fun save(context: Context, access: String, refresh: String) {
         prefs(context).edit()
             .putString(KEY_ACCESS, access)
             .putString(KEY_REFRESH, refresh)
-            .putString(KEY_LOGIN, login)
-            .putString(KEY_USER_ID, userId)
             .apply()
     }
 
