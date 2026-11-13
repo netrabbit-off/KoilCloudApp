@@ -326,14 +326,11 @@ class MainActivity : AppCompatActivity() {
                 lifecycleScope.launch {
                     try {
                         if (ApiClient.deleteItem(item.id)) {
-                            if (ApiClient.deleteItem(item.id)) {
-                                loadFiles()
-                                refreshStorage()
-                            } else {
-                                Toast.makeText(this@MainActivity, "Ошибка удаления", Toast.LENGTH_SHORT).show()
-                            }
+                            loadFiles()
+                            refreshStorage()
+                        } else {
+                            Toast.makeText(this@MainActivity, "Ошибка удаления", Toast.LENGTH_SHORT).show()
                         }
-                        else Toast.makeText(this@MainActivity, "Ошибка удаления", Toast.LENGTH_SHORT).show()
                     } catch (e: UnauthorizedException) {
                         handleUnauthorized()
                     }
