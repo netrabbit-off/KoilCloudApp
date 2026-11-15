@@ -22,9 +22,7 @@ class FileAdapter(
 ) : RecyclerView.Adapter<FileAdapter.VH>() {
 
     private val items = mutableListOf<FileItem>()
-
-
-    fun getCurrentItems(): List<FileItem> = items.toList()
+    private var cutItemId: String? = null
 
     fun submit(list: List<FileItem>) {
         items.clear()
@@ -32,13 +30,35 @@ class FileAdapter(
         notifyDataSetChanged()
     }
 
+    fun setCutItem(id: String?) {
+        val old = cutItemId
+        cutItemId = id
+        items.forEachIndexed { index, item ->
+            if (item.id == old || item.id == id) {
+                notifyItemChanged(index, "cut")
+            }
+        }
+    }
+
+    fun getCurrentItems(): List<FileItem> = items.toList()
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_file, parent, false) // ⬅ layout, не drawable
+            .inflate(R.layout.item_file, parent, false)
         return VH(view)
     }
 
-    override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(items[position])
+    override fun onBindViewHolder(holder: VH, position: Int) {
+        holder.bind(items[position])
+    }
+
+    override fun onBindViewHolder(holder: VH, position: Int, payloads: MutableList<Any>) {
+        if (payloads.contains("cut")) {
+            holder.updateCutAlpha(items[position])
+        } else {
+            super.onBindViewHolder(holder, position, payloads)
+        }
+    }
 
     override fun getItemCount() = items.size
 
@@ -57,6 +77,7 @@ class FileAdapter(
             meta.text = sizePart + datePart
 
             itemView.setOnClickListener { onPreview(item) }
+            itemView.setOnLongClickListener { onLongClick(item); true }
 
             if (item.type == "folder") {
                 download.visibility = View.GONE
@@ -70,16 +91,12 @@ class FileAdapter(
                 "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic"
             )
 
-            itemView.setOnLongClickListener { onLongClick(item); true }
-
             if (isImage) {
                 icon.visibility = View.GONE
                 thumbnail.visibility = View.VISIBLE
 
                 val imageUrl = ApiClient.downloadUrl(item.id)
                 val token = ApiClient.accessToken()
-
-                // GlideUrl с заголовком Authorization, если токен есть
                 val loadModel: Any = if (token.isNullOrBlank()) {
                     imageUrl
                 } else {
@@ -102,6 +119,12 @@ class FileAdapter(
                 icon.visibility = View.VISIBLE
                 icon.text = getFileIcon(item.name, item.type)
             }
+
+            itemView.alpha = if (item.id == cutItemId) 0.4f else 1.0f
+        }
+
+        fun updateCutAlpha(item: FileItem) {
+            itemView.alpha = if (item.id == cutItemId) 0.4f else 1.0f
         }
     }
 }

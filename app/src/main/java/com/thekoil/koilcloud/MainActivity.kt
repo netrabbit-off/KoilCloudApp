@@ -37,14 +37,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var emptyText: TextView
     private lateinit var pathTitle: TextView
     private lateinit var backButton: TextView
+    private lateinit var pasteButton: TextView
 
     private var currentPath: String = "/"
     private var loadingJob: Job? = null
     private var cutItem: FileItem? = null
 
-    private var uploadDialog: AlertDialog? = null
-    private var uploadProgressBar: ProgressBar? = null
-    private var uploadProgressText: TextView? = null
+    private lateinit var cancelCutButton: TextView
 
     private val pickMedia = registerForActivityResult(PickMultipleVisualMedia(10)) { uris: List<Uri> ->
         if (uris.isNotEmpty()) uploadFiles(uris)
@@ -71,6 +70,7 @@ class MainActivity : AppCompatActivity() {
         emptyText = findViewById(R.id.emptyText)
         pathTitle = findViewById(R.id.pathTitle)
         backButton = findViewById(R.id.backButton)
+        pasteButton = findViewById(R.id.pasteButton)
 
         adapter = FileAdapter(
             onPreview = { item -> handlePreview(item) },
@@ -81,6 +81,7 @@ class MainActivity : AppCompatActivity() {
         filesList.adapter = adapter
 
         backButton.setOnClickListener { goUp() }
+        pasteButton.setOnClickListener { pasteIntoCurrent() }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -91,10 +92,14 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
+        cancelCutButton = findViewById(R.id.cancelCutButton)
+        cancelCutButton.setOnClickListener { cancelCut() }
+
         findViewById<View>(R.id.uploadButton).setOnClickListener { showUploadSheet() }
         findViewById<View>(R.id.avatar).setOnClickListener { showProfileDialog() }
 
         updatePathUi()
+        updatePasteButton()
 
         lifecycleScope.launch {
             val ok = ApiClient.ensureAuthorized()
@@ -105,6 +110,12 @@ class MainActivity : AppCompatActivity() {
             loadFiles()
             refreshStorage()
         }
+    }
+
+    private fun cancelCut() {
+        cutItem = null
+        adapter.setCutItem(null)
+        updatePasteButton()
     }
 
     private fun refreshStorage() {
@@ -122,7 +133,6 @@ class MainActivity : AppCompatActivity() {
                 handleUnauthorized()
             } catch (e: Exception) {
                 android.util.Log.e("Storage", "refreshStorage failed", e)
-                // при ошибке показываем нули, чтобы не висели старые данные
                 findViewById<TextView>(R.id.storageRemaining).text = "— free"
                 findViewById<TextView>(R.id.storageDetail).text = "— / ${formatBytes(ApiClient.TOTAL_STORAGE_BYTES)}"
                 findViewById<ProgressBar>(R.id.storageProgress).progress = 0
@@ -247,48 +257,6 @@ class MainActivity : AppCompatActivity() {
 
     // ---------- ACTIONS SHEET ----------
 
-    private fun showUploadProgressDialog() {
-        val container = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(48, 32, 48, 16)
-        }
-
-        uploadProgressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            max = 100
-            progress = 0
-        }
-
-        uploadProgressText = TextView(this).apply {
-            text = "0%"
-            setPadding(0, 16, 0, 0)
-            textSize = 14f
-        }
-
-        container.addView(uploadProgressBar)
-        container.addView(uploadProgressText)
-
-        uploadDialog = AlertDialog.Builder(this)
-            .setTitle("Загрузка")
-            .setView(container)
-            .setCancelable(false)
-            .show()
-    }
-
-    private fun updateUploadProgress(written: Long, total: Long) {
-        runOnUiThread {
-            val percent = if (total > 0) ((written * 100) / total).toInt().coerceIn(0, 100) else 0
-            uploadProgressBar?.progress = percent
-            uploadProgressText?.text = "$percent%  (${formatBytes(written)} / ${formatBytes(total)})"
-        }
-    }
-
-    private fun dismissUploadProgressDialog() {
-        uploadDialog?.dismiss()
-        uploadDialog = null
-        uploadProgressBar = null
-        uploadProgressText = null
-    }
-
     private fun showFileActions(item: FileItem) {
         val dialog = BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
         val view = layoutInflater.inflate(R.layout.sheet_file_actions, null)
@@ -302,6 +270,8 @@ class MainActivity : AppCompatActivity() {
         view.findViewById<View>(R.id.actionCut).setOnClickListener {
             dialog.dismiss()
             cutItem = item
+            adapter.setCutItem(item.id)
+            updatePasteButton()
             Toast.makeText(this, "Вырезано: ${item.name}", Toast.LENGTH_SHORT).show()
         }
 
@@ -370,20 +340,54 @@ class MainActivity : AppCompatActivity() {
 
     private fun pasteIntoCurrent() {
         val item = cutItem ?: return
-        val newPath = if (currentPath == "/") "/${item.name}" else "${currentPath.trimEnd('/')}/${item.name}"
+
+        // Запрет перемещения папки внутрь себя
+        if (item.type == "folder") {
+            val folderFullPath = buildFolderFullPath(item)   // "/123" или "/123/sub"
+            val target = currentPath.trimEnd('/')
+            if (target == folderFullPath || target.startsWith("$folderFullPath/")) {
+                Toast.makeText(this, "Нельзя переместить папку внутрь себя", Toast.LENGTH_SHORT).show()
+                return
+            }
+        }
+
+        val newParentPath = if (currentPath == "/") "/" else "${currentPath.trimEnd('/')}/"
         lifecycleScope.launch {
             try {
-                if (ApiClient.moveItem(item.id, newPath)) {
+                if (ApiClient.moveItem(item.id, newParentPath)) {
                     cutItem = null
+                    adapter.setCutItem(null)
+                    updatePasteButton()
                     loadFiles()
                     Toast.makeText(this@MainActivity, "Перемещено", Toast.LENGTH_SHORT).show()
                 } else {
+                    // Откат: снимаем пометку, скрываем кнопку
+                    cutItem = null
+                    adapter.setCutItem(null)
+                    updatePasteButton()
                     Toast.makeText(this@MainActivity, "Ошибка перемещения", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: UnauthorizedException) {
+                cutItem = null
+                adapter.setCutItem(null)
+                updatePasteButton()
                 handleUnauthorized()
             }
         }
+    }
+    
+    private fun updatePasteButton() {
+        if (!::pasteButton.isInitialized) return
+        val visible = cutItem != null
+        pasteButton.visibility = if (visible) View.VISIBLE else View.GONE
+        if (::cancelCutButton.isInitialized) {
+            cancelCutButton.visibility = if (visible) View.VISIBLE else View.GONE
+        }
+    }
+
+    private fun buildFolderFullPath(item: FileItem): String {
+        val parent = item.path.trim('/')
+        return if (parent.isEmpty()) "/${item.name}" else "/$parent/${item.name}"
     }
 
     // ---------- UPLOAD SHEET ----------
@@ -440,28 +444,24 @@ class MainActivity : AppCompatActivity() {
 
     private fun uploadFiles(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        showUploadProgressDialog()
+        val progressToast = Toast.makeText(this, "Загрузка 0/${uris.size}", Toast.LENGTH_LONG)
+        progressToast.show()
 
         lifecycleScope.launch {
             var success = 0
             for ((index, uri) in uris.withIndex()) {
+                progressToast.setText("Загрузка ${index + 1}/${uris.size}")
                 try {
-                    val ok = ApiClient.uploadFile(
-                        context = this@MainActivity,
-                        uri = uri,
-                        parentPath = currentPath,
-                        onProgress = { written, total -> updateUploadProgress(written, total) }
-                    )
-                    if (ok) success++
+                    if (ApiClient.uploadFile(this@MainActivity, uri, currentPath)) success++
                 } catch (e: UnauthorizedException) {
-                    dismissUploadProgressDialog()
+                    progressToast.cancel()
                     handleUnauthorized()
                     return@launch
                 } catch (e: Exception) {
                     android.util.Log.e("Upload", "Failed: $uri", e)
                 }
             }
-            dismissUploadProgressDialog()
+            progressToast.cancel()
             Toast.makeText(this@MainActivity, "Загружено $success из ${uris.size}", Toast.LENGTH_LONG).show()
             loadFiles()
             refreshStorage()
@@ -507,6 +507,8 @@ class MainActivity : AppCompatActivity() {
             try {
                 val files = ApiClient.getFiles(path)
                 adapter.submit(files)
+                // Восстанавливаем пометку «вырезано» после перезагрузки списка
+                adapter.setCutItem(cutItem?.id)
                 if (files.isEmpty()) {
                     emptyText.visibility = View.VISIBLE
                     emptyText.text = "Папка пуста"
