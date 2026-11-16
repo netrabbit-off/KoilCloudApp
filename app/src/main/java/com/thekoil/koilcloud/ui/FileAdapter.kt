@@ -22,7 +22,8 @@ class FileAdapter(
 ) : RecyclerView.Adapter<FileAdapter.VH>() {
 
     private val items = mutableListOf<FileItem>()
-    private var cutItemId: String? = null
+    private var cutItemIds: Set<String> = emptySet()
+    private var selectedIds: Set<String> = emptySet()
 
     fun submit(list: List<FileItem>) {
         items.clear()
@@ -30,15 +31,22 @@ class FileAdapter(
         notifyDataSetChanged()
     }
 
-    fun setCutItem(id: String?) {
-        val old = cutItemId
-        cutItemId = id
+    fun setCutItems(ids: Set<String>) {
+        val old = cutItemIds
+        cutItemIds = ids
         items.forEachIndexed { index, item ->
-            if (item.id == old || item.id == id) {
+            if (old.contains(item.id) || ids.contains(item.id)) {
                 notifyItemChanged(index, "cut")
             }
         }
     }
+
+    fun setSelectedIds(ids: Set<String>) {
+        selectedIds = ids
+        notifyDataSetChanged()
+    }
+
+    fun isSelectionMode(): Boolean = selectedIds.isNotEmpty()
 
     fun getCurrentItems(): List<FileItem> = items.toList()
 
@@ -53,10 +61,10 @@ class FileAdapter(
     }
 
     override fun onBindViewHolder(holder: VH, position: Int, payloads: MutableList<Any>) {
-        if (payloads.contains("cut")) {
-            holder.updateCutAlpha(items[position])
-        } else {
-            super.onBindViewHolder(holder, position, payloads)
+        when {
+            payloads.contains("cut") -> holder.updateCutAlpha(items[position])
+            payloads.contains("selection") -> holder.updateSelection(items[position])
+            else -> super.onBindViewHolder(holder, position, payloads)
         }
     }
 
@@ -76,8 +84,14 @@ class FileAdapter(
             val datePart = item.modifiedAt.ifBlank { "—" }
             meta.text = sizePart + datePart
 
-            itemView.setOnClickListener { onPreview(item) }
-            itemView.setOnLongClickListener { onLongClick(item); true }
+            itemView.setOnClickListener {
+                if (isSelectionMode()) onLongClick(item)
+                else onPreview(item)
+            }
+            itemView.setOnLongClickListener {
+                onLongClick(item)
+                true
+            }
 
             if (item.type == "folder") {
                 download.visibility = View.GONE
@@ -120,11 +134,18 @@ class FileAdapter(
                 icon.text = getFileIcon(item.name, item.type)
             }
 
-            itemView.alpha = if (item.id == cutItemId) 0.4f else 1.0f
+            updateCutAlpha(item)
+            updateSelection(item)
         }
 
         fun updateCutAlpha(item: FileItem) {
-            itemView.alpha = if (item.id == cutItemId) 0.4f else 1.0f
+            itemView.alpha = if (cutItemIds.contains(item.id)) 0.4f else 1.0f
+        }
+
+        fun updateSelection(item: FileItem) {
+            itemView.setBackgroundResource(
+                if (selectedIds.contains(item.id)) R.drawable.bg_card_selected else R.drawable.bg_card
+            )
         }
     }
 }

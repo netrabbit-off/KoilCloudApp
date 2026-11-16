@@ -38,12 +38,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pathTitle: TextView
     private lateinit var backButton: TextView
     private lateinit var pasteButton: TextView
+    private lateinit var cancelCutButton: TextView
+    private lateinit var clearSelectionButton: TextView
 
     private var currentPath: String = "/"
     private var loadingJob: Job? = null
-    private var cutItem: FileItem? = null
 
-    private lateinit var cancelCutButton: TextView
+    /** Мультивырезание: id -> FileItem. */
+    private val cutItems = linkedMapOf<String, FileItem>()
+
+    /** Мультивыделение: id -> FileItem. Живёт при переходе между папками. */
+    private val selectedItems = linkedMapOf<String, FileItem>()
 
     private val pickMedia = registerForActivityResult(PickMultipleVisualMedia(10)) { uris: List<Uri> ->
         if (uris.isNotEmpty()) uploadFiles(uris)
@@ -71,32 +76,54 @@ class MainActivity : AppCompatActivity() {
         pathTitle = findViewById(R.id.pathTitle)
         backButton = findViewById(R.id.backButton)
         pasteButton = findViewById(R.id.pasteButton)
+        cancelCutButton = findViewById(R.id.cancelCutButton)
 
         adapter = FileAdapter(
             onPreview = { item -> handlePreview(item) },
             onDownload = { item -> downloadItem(item) },
-            onLongClick = { item -> showFileActions(item) }
+            onLongClick = { item -> toggleSelection(item) }
         )
         filesList.layoutManager = LinearLayoutManager(this)
         filesList.adapter = adapter
 
-        backButton.setOnClickListener { goUp() }
+        backButton.setOnClickListener {
+            if (isSelectionMode()) clearSelection()
+            else goUp()
+        }
         pasteButton.setOnClickListener { pasteIntoCurrent() }
+        cancelCutButton.setOnClickListener { cancelCut() }
+
+        filesList.setOnTouchListener { _, event ->
+            if (event.action == android.view.MotionEvent.ACTION_DOWN) {
+                if (isSelectionMode()) {
+                    // Проверяем, попали ли в ребёнка RecyclerView
+                    val child = filesList.findChildViewUnder(event.x, event.y)
+                    if (child == null) {
+                        clearSelection()
+                        return@setOnTouchListener true
+                    }
+                }
+            }
+            false
+        }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (currentPath != "/") goUp() else {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
+                when {
+                    isSelectionMode() -> clearSelection()
+                    currentPath != "/" -> goUp()
+                    else -> {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                    }
                 }
             }
         })
 
-        cancelCutButton = findViewById(R.id.cancelCutButton)
-        cancelCutButton.setOnClickListener { cancelCut() }
-
-        findViewById<View>(R.id.uploadButton).setOnClickListener { showUploadSheet() }
         findViewById<View>(R.id.avatar).setOnClickListener { showProfileDialog() }
+        findViewById<View>(R.id.menuButton).setOnClickListener { showActionsMenu() }
+        findViewById<View>(R.id.uploadButton).setOnClickListener { showUploadSheet() }
+        findViewById<View>(R.id.clearSelectionButton).setOnClickListener { clearSelection() }
 
         updatePathUi()
         updatePasteButton()
@@ -112,32 +139,197 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ---------- SELECTION ----------
+
+    private fun isSelectionMode(): Boolean = selectedItems.isNotEmpty()
+
+    private fun toggleSelection(item: FileItem) {
+        if (selectedItems.containsKey(item.id)) selectedItems.remove(item.id)
+        else selectedItems[item.id] = item
+        adapter.setSelectedIds(selectedItems.keys)
+        updatePathUi()
+    }
+
+    private fun clearSelection() {
+        if (selectedItems.isEmpty()) return
+        selectedItems.clear()
+        adapter.setSelectedIds(emptySet())
+        updatePathUi()
+    }
+
+    // ---------- ACTIONS MENU (⋮) ----------
+
+    private fun showActionsMenu() {
+        val dialog = BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
+        val view = layoutInflater.inflate(R.layout.sheet_selection_actions, null)
+        dialog.setContentView(view)
+
+        val single = selectedItems.size == 1
+        val singleItem = if (single) selectedItems.values.firstOrNull() else null
+        val renameView = view.findViewById<View>(R.id.selRename)
+
+        if (single && singleItem != null) {
+            renameView.visibility = View.VISIBLE
+            renameView.setOnClickListener {
+                dialog.dismiss()
+                showRenameDialog(singleItem)
+            }
+        } else {
+            renameView.visibility = View.GONE
+        }
+
+        view.findViewById<View>(R.id.selDelete).setOnClickListener {
+            dialog.dismiss()
+            deleteSelected()
+        }
+
+        view.findViewById<View>(R.id.selCut).setOnClickListener {
+            dialog.dismiss()
+            cutSelected()
+        }
+
+        dialog.show()
+    }
+
+    // ---------- MULTI DELETE ----------
+
+    private fun deleteSelected() {
+        val items = selectedItems.values.toList()
+        if (items.isEmpty()) return
+
+        AlertDialog.Builder(this)
+            .setTitle("Удалить ${items.size}?")
+            .setMessage("Выбранные элементы будут удалены безвозвратно.")
+            .setPositiveButton("Удалить") { _, _ ->
+                lifecycleScope.launch {
+                    var success = 0
+                    for (item in items) {
+                        try {
+                            if (ApiClient.deleteItem(item.id)) success++
+                        } catch (e: UnauthorizedException) {
+                            clearSelection()
+                            handleUnauthorized()
+                            return@launch
+                        } catch (e: Exception) {
+                            android.util.Log.e("Delete", "failed: ${item.name}", e)
+                        }
+                    }
+                    clearSelection()
+                    loadFiles()
+                    refreshStorage()
+                    Toast.makeText(this@MainActivity, "Удалено $success из ${items.size}", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    // ---------- MULTI CUT ----------
+
+    private fun cutSelected() {
+        if (selectedItems.isEmpty()) return
+        cutItems.clear()
+        cutItems.putAll(selectedItems)
+        adapter.setCutItems(cutItems.keys)
+        updatePasteButton()
+        Toast.makeText(this, "Вырезано: ${cutItems.size}", Toast.LENGTH_SHORT).show()
+        clearSelection()
+    }
+
+    // ---------- MULTI MOVE ----------
+
+    private fun moveSelected() {
+        val items = selectedItems.values.toList()
+        if (items.isEmpty()) return
+
+        // Запрет: папка не может быть перемещена внутрь себя
+        for (item in items) {
+            if (item.type == "folder") {
+                val folderFullPath = buildFolderFullPath(item)
+                val target = currentPath.trimEnd('/')
+                if (target == folderFullPath || target.startsWith("$folderFullPath/")) {
+                    Toast.makeText(this, "Нельзя переместить папку «${item.name}» внутрь себя", Toast.LENGTH_LONG).show()
+                    return
+                }
+            }
+        }
+
+        val newParentPath = if (currentPath == "/") "/" else "${currentPath.trimEnd('/')}/"
+        lifecycleScope.launch {
+            var success = 0
+            for (item in items) {
+                try {
+                    if (ApiClient.moveItem(item.id, newParentPath)) success++
+                } catch (e: UnauthorizedException) {
+                    clearSelection()
+                    handleUnauthorized()
+                    return@launch
+                } catch (e: Exception) {
+                    android.util.Log.e("Move", "failed: ${item.name}", e)
+                }
+            }
+            clearSelection()
+            loadFiles()
+            Toast.makeText(this@MainActivity, "Перемещено $success из ${items.size}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // ---------- CUT / PASTE ----------
+
+    private fun pasteIntoCurrent() {
+        if (cutItems.isEmpty()) return
+        val items = cutItems.values.toList()
+
+        // Запрет: папка не может быть перемещена внутрь себя
+        for (item in items) {
+            if (item.type == "folder") {
+                val folderFullPath = buildFolderFullPath(item)
+                val target = currentPath.trimEnd('/')
+                if (target == folderFullPath || target.startsWith("$folderFullPath/")) {
+                    Toast.makeText(this, "Нельзя переместить папку «${item.name}» внутрь себя", Toast.LENGTH_LONG).show()
+                    return
+                }
+            }
+        }
+
+        val newParentPath = if (currentPath == "/") "/" else "${currentPath.trimEnd('/')}/"
+        lifecycleScope.launch {
+            var success = 0
+            for (item in items) {
+                try {
+                    if (ApiClient.moveItem(item.id, newParentPath)) success++
+                } catch (e: UnauthorizedException) {
+                    cancelCut()
+                    handleUnauthorized()
+                    return@launch
+                } catch (e: Exception) {
+                    android.util.Log.e("Move", "failed: ${item.name}", e)
+                }
+            }
+            cancelCut()
+            loadFiles()
+            Toast.makeText(this@MainActivity, "Перемещено $success из ${items.size}", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun cancelCut() {
-        cutItem = null
-        adapter.setCutItem(null)
+        cutItems.clear()
+        adapter.setCutItems(emptySet())
         updatePasteButton()
     }
 
-    private fun refreshStorage() {
-        lifecycleScope.launch {
-            try {
-                val used = ApiClient.getUsedStorage()
-                val total = ApiClient.TOTAL_STORAGE_BYTES
-                val remaining = (total - used).coerceAtLeast(0)
-
-                findViewById<TextView>(R.id.storageRemaining).text = "${formatBytes(remaining)} free"
-                findViewById<TextView>(R.id.storageDetail).text = "${formatBytes(used)} / ${formatBytes(total)}"
-                findViewById<ProgressBar>(R.id.storageProgress).progress =
-                    if (total > 0) ((used * 100) / total).toInt().coerceIn(0, 100) else 0
-            } catch (e: UnauthorizedException) {
-                handleUnauthorized()
-            } catch (e: Exception) {
-                android.util.Log.e("Storage", "refreshStorage failed", e)
-                findViewById<TextView>(R.id.storageRemaining).text = "— free"
-                findViewById<TextView>(R.id.storageDetail).text = "— / ${formatBytes(ApiClient.TOTAL_STORAGE_BYTES)}"
-                findViewById<ProgressBar>(R.id.storageProgress).progress = 0
-            }
+    private fun updatePasteButton() {
+        if (!::pasteButton.isInitialized) return
+        val visible = cutItems.isNotEmpty()
+        pasteButton.visibility = if (visible) View.VISIBLE else View.GONE
+        if (::cancelCutButton.isInitialized) {
+            cancelCutButton.visibility = if (visible) View.VISIBLE else View.GONE
         }
+    }
+
+    private fun buildFolderFullPath(item: FileItem): String {
+        val parent = item.path.trim('/')
+        return if (parent.isEmpty()) "/${item.name}" else "/$parent/${item.name}"
     }
 
     // ---------- AUTH ----------
@@ -187,7 +379,6 @@ class MainActivity : AppCompatActivity() {
                 dialog.dismiss()
                 handleUnauthorized()
             } catch (e: Exception) {
-                android.util.Log.e("Profile", "load failed", e)
                 loginView.text = "Ошибка загрузки"
             }
         }
@@ -255,44 +446,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---------- ACTIONS SHEET ----------
-
-    private fun showFileActions(item: FileItem) {
-        val dialog = BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
-        val view = layoutInflater.inflate(R.layout.sheet_file_actions, null)
-        dialog.setContentView(view)
-
-        view.findViewById<View>(R.id.actionRename).setOnClickListener {
-            dialog.dismiss()
-            showRenameDialog(item)
-        }
-
-        view.findViewById<View>(R.id.actionCut).setOnClickListener {
-            dialog.dismiss()
-            cutItem = item
-            adapter.setCutItem(item.id)
-            updatePasteButton()
-            Toast.makeText(this, "Вырезано: ${item.name}", Toast.LENGTH_SHORT).show()
-        }
-
-        val pasteView = view.findViewById<View>(R.id.actionPaste)
-        if (cutItem != null) {
-            pasteView.visibility = View.VISIBLE
-            pasteView.setOnClickListener {
-                dialog.dismiss()
-                pasteIntoCurrent()
-            }
-        } else {
-            pasteView.visibility = View.GONE
-        }
-
-        view.findViewById<View>(R.id.actionDelete).setOnClickListener {
-            dialog.dismiss()
-            confirmDelete(item)
-        }
-
-        dialog.show()
-    }
+    // ---------- RENAME ----------
 
     private fun showRenameDialog(item: FileItem) {
         val input = EditText(this).apply { setText(item.name) }
@@ -304,8 +458,12 @@ class MainActivity : AppCompatActivity() {
                 if (newName.isNotEmpty() && newName != item.name) {
                     lifecycleScope.launch {
                         try {
-                            if (ApiClient.renameItem(item.id, newName)) loadFiles()
-                            else Toast.makeText(this@MainActivity, "Ошибка переименования", Toast.LENGTH_SHORT).show()
+                            if (ApiClient.renameItem(item.id, newName)) {
+                                clearSelection()
+                                loadFiles()
+                            } else {
+                                Toast.makeText(this@MainActivity, "Ошибка переименования", Toast.LENGTH_SHORT).show()
+                            }
                         } catch (e: UnauthorizedException) {
                             handleUnauthorized()
                         }
@@ -316,81 +474,28 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun confirmDelete(item: FileItem) {
-        AlertDialog.Builder(this)
-            .setTitle("Удалить?")
-            .setMessage("«${item.name}» будет удалён безвозвратно.")
-            .setPositiveButton("Удалить") { _, _ ->
-                lifecycleScope.launch {
-                    try {
-                        if (ApiClient.deleteItem(item.id)) {
-                            loadFiles()
-                            refreshStorage()
-                        } else {
-                            Toast.makeText(this@MainActivity, "Ошибка удаления", Toast.LENGTH_SHORT).show()
-                        }
-                    } catch (e: UnauthorizedException) {
-                        handleUnauthorized()
-                    }
-                }
-            }
-            .setNegativeButton("Отмена", null)
-            .show()
-    }
+    // ---------- STORAGE ----------
 
-    private fun pasteIntoCurrent() {
-        val item = cutItem ?: return
-
-        // Запрет перемещения папки внутрь себя
-        if (item.type == "folder") {
-            val folderFullPath = buildFolderFullPath(item)   // "/123" или "/123/sub"
-            val target = currentPath.trimEnd('/')
-            if (target == folderFullPath || target.startsWith("$folderFullPath/")) {
-                Toast.makeText(this, "Нельзя переместить папку внутрь себя", Toast.LENGTH_SHORT).show()
-                return
-            }
-        }
-
-        val newParentPath = if (currentPath == "/") "/" else "${currentPath.trimEnd('/')}/"
+    private fun refreshStorage() {
         lifecycleScope.launch {
             try {
-                if (ApiClient.moveItem(item.id, newParentPath)) {
-                    cutItem = null
-                    adapter.setCutItem(null)
-                    updatePasteButton()
-                    loadFiles()
-                    Toast.makeText(this@MainActivity, "Перемещено", Toast.LENGTH_SHORT).show()
-                } else {
-                    // Откат: снимаем пометку, скрываем кнопку
-                    cutItem = null
-                    adapter.setCutItem(null)
-                    updatePasteButton()
-                    Toast.makeText(this@MainActivity, "Ошибка перемещения", Toast.LENGTH_SHORT).show()
-                }
+                val used = ApiClient.getUsedStorage()
+                val total = ApiClient.TOTAL_STORAGE_BYTES
+                val remaining = (total - used).coerceAtLeast(0)
+
+                findViewById<TextView>(R.id.storageRemaining).text = "${formatBytes(remaining)} free"
+                findViewById<TextView>(R.id.storageDetail).text = "${formatBytes(used)} / ${formatBytes(total)}"
+                findViewById<ProgressBar>(R.id.storageProgress).progress =
+                    if (total > 0) ((used * 100) / total).toInt().coerceIn(0, 100) else 0
             } catch (e: UnauthorizedException) {
-                cutItem = null
-                adapter.setCutItem(null)
-                updatePasteButton()
                 handleUnauthorized()
+            } catch (e: Exception) {
+                android.util.Log.e("Storage", "refreshStorage failed", e)
             }
         }
     }
-    
-    private fun updatePasteButton() {
-        if (!::pasteButton.isInitialized) return
-        val visible = cutItem != null
-        pasteButton.visibility = if (visible) View.VISIBLE else View.GONE
-        if (::cancelCutButton.isInitialized) {
-            cancelCutButton.visibility = if (visible) View.VISIBLE else View.GONE
-        }
-    }
 
-    private fun buildFolderFullPath(item: FileItem): String {
-        val parent = item.path.trim('/')
-        return if (parent.isEmpty()) "/${item.name}" else "/$parent/${item.name}"
-    }
-
-    // ---------- UPLOAD SHEET ----------
+    // ---------- UPLOAD ----------
 
     private fun showUploadSheet() {
         val dialog = BottomSheetDialog(this, R.style.BottomSheetDialogTheme)
@@ -471,6 +576,7 @@ class MainActivity : AppCompatActivity() {
     // ---------- NAVIGATION ----------
 
     private fun navigateTo(parentPath: String, name: String) {
+        // Выделение НЕ снимаем — оно глобальное
         val parent = parentPath.trim('/')
         val trimmedName = name.trim('/')
         currentPath = if (parent.isEmpty()) "/$trimmedName" else "/$parent/$trimmedName"
@@ -492,8 +598,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updatePathUi() {
-        pathTitle.text = if (currentPath == "/") "My Drive" else currentPath.substringAfterLast('/')
-        backButton.visibility = if (currentPath == "/") View.GONE else View.VISIBLE
+        val count = selectedItems.size
+        val inSelection = count > 0
+
+        pathTitle.text = if (inSelection) "Выбрано: $count"
+        else if (currentPath == "/") "My Drive"
+        else currentPath.substringAfterLast('/')
+
+        backButton.visibility = if (inSelection || currentPath != "/") View.VISIBLE else View.GONE
+
+        if (::clearSelectionButton.isInitialized) {
+            clearSelectionButton.visibility = if (inSelection) View.VISIBLE else View.GONE
+        }
+        findViewById<View>(R.id.menuButton).visibility =
+            if (inSelection) View.VISIBLE else View.GONE
     }
 
     private fun loadFiles() {
@@ -507,8 +625,9 @@ class MainActivity : AppCompatActivity() {
             try {
                 val files = ApiClient.getFiles(path)
                 adapter.submit(files)
-                // Восстанавливаем пометку «вырезано» после перезагрузки списка
-                adapter.setCutItem(cutItem?.id)
+                adapter.setSelectedIds(selectedItems.keys)
+                adapter.setCutItems(cutItems.keys)
+                updatePathUi()
                 if (files.isEmpty()) {
                     emptyText.visibility = View.VISIBLE
                     emptyText.text = "Папка пуста"
