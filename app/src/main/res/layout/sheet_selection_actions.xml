@@ -25,6 +25,38 @@
         android:textSize="18sp"
         android:textStyle="bold" />
 
+    <!-- Выделить всё -->
+    <LinearLayout
+        android:id="@+id/selSelectAll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_sheet_item"
+        android:padding="16dp"
+        android:layout_marginBottom="8dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:foreground="?attr/selectableItemBackground">
+
+        <TextView
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_icon"
+            android:gravity="center"
+            android:text="☑️"
+            android:textSize="18sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:text="Выделить всё"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+    <!-- Переименовать -->
     <LinearLayout
         android:id="@+id/selRename"
         android:layout_width="match_parent"
@@ -56,6 +88,7 @@
             android:textSize="15sp" />
     </LinearLayout>
 
+    <!-- Вырезать -->
     <LinearLayout
         android:id="@+id/selCut"
         android:layout_width="match_parent"
@@ -86,6 +119,7 @@
             android:textSize="15sp" />
     </LinearLayout>
 
+    <!-- Удалить -->
     <LinearLayout
         android:id="@+id/selDelete"
         android:layout_width="match_parent"

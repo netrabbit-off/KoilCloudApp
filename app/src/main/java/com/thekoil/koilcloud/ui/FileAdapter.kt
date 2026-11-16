@@ -32,13 +32,8 @@ class FileAdapter(
     }
 
     fun setCutItems(ids: Set<String>) {
-        val old = cutItemIds
         cutItemIds = ids
-        items.forEachIndexed { index, item ->
-            if (old.contains(item.id) || ids.contains(item.id)) {
-                notifyItemChanged(index, "cut")
-            }
-        }
+        notifyDataSetChanged()
     }
 
     fun setSelectedIds(ids: Set<String>) {
@@ -58,14 +53,6 @@ class FileAdapter(
 
     override fun onBindViewHolder(holder: VH, position: Int) {
         holder.bind(items[position])
-    }
-
-    override fun onBindViewHolder(holder: VH, position: Int, payloads: MutableList<Any>) {
-        when {
-            payloads.contains("cut") -> holder.updateCutAlpha(items[position])
-            payloads.contains("selection") -> holder.updateSelection(items[position])
-            else -> super.onBindViewHolder(holder, position, payloads)
-        }
     }
 
     override fun getItemCount() = items.size
@@ -134,15 +121,7 @@ class FileAdapter(
                 icon.text = getFileIcon(item.name, item.type)
             }
 
-            updateCutAlpha(item)
-            updateSelection(item)
-        }
-
-        fun updateCutAlpha(item: FileItem) {
             itemView.alpha = if (cutItemIds.contains(item.id)) 0.4f else 1.0f
-        }
-
-        fun updateSelection(item: FileItem) {
             itemView.setBackgroundResource(
                 if (selectedIds.contains(item.id)) R.drawable.bg_card_selected else R.drawable.bg_card
             )
