@@ -8,6 +8,7 @@ import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.lifecycleScope
 import com.thekoil.koilcloud.api.ApiClient
 import com.thekoil.koilcloud.auth.AuthError
@@ -34,12 +35,17 @@ class RegisterActivity : AppCompatActivity() {
         val passwordError = findViewById<TextView>(R.id.registerPasswordError)
         val inviteError = findViewById<TextView>(R.id.registerInviteError)
 
+        // Скрываем ошибку при вводе
+        loginField.doAfterTextChanged { hideError(loginField, loginError) }
+        password.doAfterTextChanged { hideError(password, passwordError) }
+        invite.doAfterTextChanged { hideError(invite, inviteError) }
+
         backToLogin.setOnClickListener { finish() }
 
         button.setOnClickListener {
-            loginError.visibility = View.GONE
-            passwordError.visibility = View.GONE
-            inviteError.visibility = View.GONE
+            hideError(loginField, loginError)
+            hideError(password, passwordError)
+            hideError(invite, inviteError)
 
             val l = loginField.text.toString().trim()
             val p = password.text.toString()
@@ -47,18 +53,15 @@ class RegisterActivity : AppCompatActivity() {
 
             var valid = true
             if (l.isBlank()) {
-                loginError.text = "Введите логин"
-                loginError.visibility = View.VISIBLE
+                showError(loginField, loginError, "Введите логин")
                 valid = false
             }
             if (p.length < 4) {
-                passwordError.text = "Пароль минимум 4 символа"
-                passwordError.visibility = View.VISIBLE
+                showError(password, passwordError, "Пароль минимум 4 символа")
                 valid = false
             }
             if (code.isBlank()) {
-                inviteError.text = "Введите пригласительный код"
-                inviteError.visibility = View.VISIBLE
+                showError(invite, inviteError, "Введите пригласительный код")
                 valid = false
             }
             if (!valid) return@setOnClickListener
@@ -80,35 +83,37 @@ class RegisterActivity : AppCompatActivity() {
                     }
                     is AuthResult.Failure -> {
                         when (result.error) {
-                            AuthError.LOGIN_TAKEN -> {
-                                loginError.text = "Такой логин уже занят"
-                                loginError.visibility = View.VISIBLE
-                            }
-                            AuthError.INVALID_INVITE -> {
-                                inviteError.text = "Неверный пригласительный код"
-                                inviteError.visibility = View.VISIBLE
-                            }
-                            AuthError.INVALID_CREDENTIALS -> {
-                                loginError.text = "Неправильный логин или пароль"
-                                loginError.visibility = View.VISIBLE
-                            }
-                            AuthError.UNAUTHORIZED -> {
+                            AuthError.LOGIN_TAKEN ->
+                                showError(loginField, loginError, "Такой логин уже занят")
+                            AuthError.INVALID_INVITE ->
+                                showError(invite, inviteError, "Неверный пригласительный код")
+                            AuthError.INVALID_CREDENTIALS ->
+                                showError(loginField, loginError, "Неправильный логин или пароль")
+                            AuthError.UNAUTHORIZED ->
                                 Toast.makeText(
                                     this@RegisterActivity,
                                     "Сессия истекла, войдите снова",
                                     Toast.LENGTH_SHORT
                                 ).show()
-                            }
-                            AuthError.NETWORK -> {
+                            AuthError.NETWORK ->
                                 Toast.makeText(this@RegisterActivity, "Нет соединения", Toast.LENGTH_SHORT).show()
-                            }
-                            AuthError.UNKNOWN -> {
+                            AuthError.UNKNOWN ->
                                 Toast.makeText(this@RegisterActivity, "Ошибка регистрации", Toast.LENGTH_SHORT).show()
-                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    private fun showError(field: EditText, errorView: TextView, message: String) {
+        errorView.text = message
+        errorView.visibility = View.VISIBLE
+        field.setBackgroundResource(R.drawable.bg_input_error)
+    }
+
+    private fun hideError(field: EditText, errorView: TextView) {
+        errorView.visibility = View.GONE
+        field.setBackgroundResource(R.drawable.bg_input)
     }
 }

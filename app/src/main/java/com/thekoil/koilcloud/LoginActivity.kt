@@ -36,8 +36,14 @@ class LoginActivity : AppCompatActivity() {
         val loginError = findViewById<TextView>(R.id.loginError)
         val passwordError = findViewById<TextView>(R.id.loginPasswordError)
 
-        loginField.doAfterTextChanged { hideError(loginError) }
-        password.doAfterTextChanged { hideError(passwordError) }
+        loginField.doAfterTextChanged {
+            hideError(loginField, loginError)
+            hideError(password, passwordError)
+        }
+        password.doAfterTextChanged {
+            hideError(loginField, loginError)
+            hideError(password, passwordError)
+        }
 
         findViewById<TextView>(R.id.goToRegister).setOnClickListener {
             startActivity(Intent(this, RegisterActivity::class.java))
@@ -47,16 +53,16 @@ class LoginActivity : AppCompatActivity() {
             val l = loginField.text.toString().trim()
             val p = password.text.toString()
 
-            hideError(loginError)
-            hideError(passwordError)
+            hideError(loginField, loginError)
+            hideError(password, passwordError)
 
             var valid = true
             if (l.isBlank()) {
-                showError(loginError, "Введите логин")
+                showError(loginField, loginError, "Введите логин")
                 valid = false
             }
             if (p.isBlank()) {
-                showError(passwordError, "Введите пароль")
+                showError(password, passwordError, "Введите пароль")
                 valid = false
             }
             if (!valid) return@setOnClickListener
@@ -77,18 +83,20 @@ class LoginActivity : AppCompatActivity() {
                     }
                     is AuthResult.Failure -> {
                         when (result.error) {
-                            AuthError.INVALID_CREDENTIALS ->
-                                showError(loginError, "Неправильный логин или пароль")
+                            AuthError.INVALID_CREDENTIALS -> {
+                                showError(loginField, loginError, "Неправильный логин или пароль")
+                                showError(password, passwordError, "")
+                            }
                             AuthError.LOGIN_TAKEN ->
-                                showError(loginError, "Такой логин уже занят")
+                                showError(loginField, loginError, "Такой логин уже занят")
                             AuthError.INVALID_INVITE ->
-                                showError(loginError, "Неверный пригласительный код")
+                                showError(loginField, loginError, "Неверный пригласительный код")
                             AuthError.UNAUTHORIZED ->
-                                showError(loginError, "Сессия истекла, войдите снова")
+                                showError(loginField, loginError, "Сессия истекла, войдите снова")
                             AuthError.NETWORK ->
                                 Toast.makeText(this@LoginActivity, "Нет соединения", Toast.LENGTH_SHORT).show()
                             AuthError.UNKNOWN ->
-                                showError(loginError, "Что-то пошло не так")
+                                showError(loginField, loginError, "Что-то пошло не так")
                         }
                     }
                 }
@@ -101,12 +109,14 @@ class LoginActivity : AppCompatActivity() {
         finish()
     }
 
-    private fun showError(view: TextView, message: String) {
-        view.text = message
-        view.visibility = View.VISIBLE
+    private fun showError(field: EditText, errorView: TextView, message: String) {
+        errorView.text = message
+        errorView.visibility = View.VISIBLE
+        field.setBackgroundResource(R.drawable.bg_input_error)
     }
 
-    private fun hideError(view: TextView) {
-        view.visibility = View.GONE
+    private fun hideError(field: EditText, errorView: TextView) {
+        errorView.visibility = View.GONE
+        field.setBackgroundResource(R.drawable.bg_input)
     }
 }
