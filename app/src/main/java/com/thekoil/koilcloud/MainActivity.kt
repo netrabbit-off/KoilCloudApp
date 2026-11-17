@@ -139,7 +139,7 @@ class MainActivity : AppCompatActivity() {
         breadcrumbs.removeAllViews()
 
         val segments = mutableListOf<Pair<String, String>>()
-        segments.add("My Drive" to "/")
+        segments.add("KoilCloud" to "/")
 
         if (currentPath != "/") {
             val parts = currentPath.trim('/').split('/')
