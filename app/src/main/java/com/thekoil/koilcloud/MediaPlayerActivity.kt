@@ -60,6 +60,10 @@ class MediaPlayerActivity : AppCompatActivity() {
 
         findViewById<PlayerView>(R.id.playerView).player = player
 
+        findViewById<android.view.View>(R.id.playerClose).setOnClickListener {
+            player?.pause()
+            finish()
+        }
         findViewById<android.view.View>(R.id.btnPrev).setOnClickListener { goTo(currentIndex - 1) }
         findViewById<android.view.View>(R.id.btnNext).setOnClickListener { goTo(currentIndex + 1) }
 
