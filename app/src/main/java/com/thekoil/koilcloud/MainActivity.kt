@@ -47,6 +47,7 @@ class MainActivity : AppCompatActivity() {
 
     private val cutItems = linkedMapOf<String, FileItem>()
     private val selectedItems = linkedMapOf<String, FileItem>()
+    private lateinit var breadcrumbs: android.widget.LinearLayout
 
     private val pickMedia = registerForActivityResult(PickMultipleVisualMedia(10)) { uris: List<Uri> ->
         if (uris.isNotEmpty()) uploadFiles(uris)
@@ -71,12 +72,12 @@ class MainActivity : AppCompatActivity() {
         filesList = findViewById(R.id.filesList)
         loading = findViewById(R.id.loading)
         emptyText = findViewById(R.id.emptyText)
-        pathTitle = findViewById(R.id.pathTitle)
         backButton = findViewById(R.id.backButton)
         pasteButton = findViewById(R.id.pasteButton)
         cancelCutButton = findViewById(R.id.cancelCutButton)
         clearSelectionButton = findViewById(R.id.clearSelectionButton)
         menuButton = findViewById(R.id.menuButton)
+        breadcrumbs = findViewById(R.id.breadcrumbs)
 
         adapter = FileAdapter(
             onPreview = { item -> handlePreview(item) },
@@ -122,6 +123,73 @@ class MainActivity : AppCompatActivity() {
             }
             loadFiles()
             refreshStorage()
+        }
+    }
+
+    private fun updatePathUi() {
+        updateBreadcrumbs()
+
+        val inSelection = selectedItems.isNotEmpty()
+        backButton.visibility = if (inSelection || currentPath != "/") View.VISIBLE else View.GONE
+        clearSelectionButton.visibility = if (inSelection) View.VISIBLE else View.GONE
+        menuButton.visibility = View.VISIBLE
+    }
+
+    private fun updateBreadcrumbs() {
+        breadcrumbs.removeAllViews()
+
+        val segments = mutableListOf<Pair<String, String>>()
+        segments.add("My Drive" to "/")
+
+        if (currentPath != "/") {
+            val parts = currentPath.trim('/').split('/')
+            var acc = ""
+            for (part in parts) {
+                acc = "$acc/$part"
+                segments.add(part to acc)
+            }
+        }
+
+        for ((index, segment) in segments.withIndex()) {
+            val (label, path) = segment
+
+            val tv = TextView(this).apply {
+                text = label
+                setTextColor(
+                    if (index == segments.lastIndex) getColor(R.color.text_primary)
+                    else getColor(R.color.primary)
+                )
+                textSize = 16f
+                setTypeface(
+                    null,
+                    if (index == segments.lastIndex) android.graphics.Typeface.BOLD
+                    else android.graphics.Typeface.NORMAL
+                )
+                isClickable = index != segments.lastIndex
+                isFocusable = index != segments.lastIndex
+                setOnClickListener {
+                    if (path != currentPath) {
+                        currentPath = path
+                        updatePathUi()
+                        loadFiles()
+                    }
+                }
+            }
+            breadcrumbs.addView(tv)
+
+            if (index < segments.lastIndex) {
+                val sep = TextView(this).apply {
+                    text = " / "
+                    setTextColor(getColor(R.color.text_secondary))
+                    textSize = 16f
+                }
+                breadcrumbs.addView(sep)
+            }
+        }
+
+        breadcrumbs.post {
+            (breadcrumbs.parent as? android.widget.HorizontalScrollView)
+                ?.fullScroll(android.view.View.FOCUS_RIGHT)
         }
     }
 
@@ -567,19 +635,6 @@ class MainActivity : AppCompatActivity() {
         }
         updatePathUi()
         loadFiles()
-    }
-
-    private fun updatePathUi() {
-        val count = selectedItems.size
-        val inSelection = count > 0
-
-        pathTitle.text = if (inSelection) "Выбрано: $count"
-        else if (currentPath == "/") "My Drive"
-        else currentPath.substringAfterLast('/')
-
-        backButton.visibility = if (inSelection || currentPath != "/") View.VISIBLE else View.GONE
-        clearSelectionButton.visibility = if (inSelection) View.VISIBLE else View.GONE
-        menuButton.visibility = View.VISIBLE
     }
 
     private fun loadFiles() {
