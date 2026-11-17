@@ -130,7 +130,7 @@ class MainActivity : AppCompatActivity() {
         updateBreadcrumbs()
 
         val inSelection = selectedItems.isNotEmpty()
-        backButton.visibility = if (inSelection || currentPath != "/") View.VISIBLE else View.GONE
+        backButton.visibility = if (currentPath != "/") View.VISIBLE else View.GONE
         clearSelectionButton.visibility = if (inSelection) View.VISIBLE else View.GONE
         menuButton.visibility = View.VISIBLE
     }
