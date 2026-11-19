@@ -13,7 +13,6 @@ import com.thekoil.koilcloud.R
 import com.thekoil.koilcloud.api.ApiClient
 import com.thekoil.koilcloud.model.FileItem
 import com.thekoil.koilcloud.util.formatBytes
-import com.thekoil.koilcloud.util.getFileIcon
 
 class FileAdapter(
     private val onPreview: (FileItem) -> Unit,
@@ -57,12 +56,23 @@ class FileAdapter(
 
     override fun getItemCount() = items.size
 
+    private fun iconFor(item: FileItem): Int {
+        if (item.type == "folder") return R.drawable.ic_folder
+        return when (item.name.substringAfterLast('.', "").lowercase()) {
+            "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic" -> R.drawable.ic_image
+            "mp4", "mov", "mkv", "webm", "avi" -> R.drawable.ic_video
+            "mp3", "m4a", "wav", "flac", "ogg", "aac" -> R.drawable.ic_audio
+            "zip", "rar", "7z", "tar", "gz" -> R.drawable.ic_archive
+            else -> R.drawable.ic_document
+        }
+    }
+
     inner class VH(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val icon: TextView = itemView.findViewById(R.id.fileIcon)
+        private val icon: ImageView = itemView.findViewById(R.id.fileIcon)
         private val thumbnail: ImageView = itemView.findViewById(R.id.fileThumbnail)
         private val name: TextView = itemView.findViewById(R.id.fileName)
         private val meta: TextView = itemView.findViewById(R.id.fileMeta)
-        private val download: TextView = itemView.findViewById(R.id.downloadButton)
+        private val download: ImageView = itemView.findViewById(R.id.downloadButton)
 
         fun bind(item: FileItem) {
             name.text = item.name
@@ -118,7 +128,7 @@ class FileAdapter(
             } else {
                 thumbnail.visibility = View.GONE
                 icon.visibility = View.VISIBLE
-                icon.text = getFileIcon(item.name, item.type)
+                icon.setImageResource(iconFor(item))
             }
 
             itemView.alpha = if (cutItemIds.contains(item.id)) 0.4f else 1.0f

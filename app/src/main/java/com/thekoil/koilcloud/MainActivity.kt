@@ -18,6 +18,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import android.widget.ImageView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.thekoil.koilcloud.api.ApiClient
 import com.thekoil.koilcloud.auth.AuthManager
@@ -35,12 +36,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var filesList: RecyclerView
     private lateinit var loading: ProgressBar
     private lateinit var emptyText: TextView
-    private lateinit var pathTitle: TextView
-    private lateinit var backButton: TextView
-    private lateinit var pasteButton: TextView
-    private lateinit var cancelCutButton: TextView
-    private lateinit var clearSelectionButton: TextView
-    private lateinit var menuButton: TextView
+    private lateinit var backButton: ImageView
+    private lateinit var pasteButton: ImageView
+    private lateinit var cancelCutButton: ImageView
+    private lateinit var clearSelectionButton: ImageView
+    private lateinit var menuButton: ImageView
 
     private var currentPath: String = "/"
     private var loadingJob: Job? = null

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#000000"
@@ -20,30 +21,28 @@
         android:padding="12dp"
         android:background="#80000000">
 
-        <TextView
+        <ImageView
             android:id="@+id/playerClose"
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:background="@drawable/bg_icon"
-            android:gravity="center"
-            android:text="✕"
-            android:textColor="@color/text_primary"
-            android:textSize="18sp"
+            android:padding="8dp"
+            android:src="@drawable/ic_close"
             android:clickable="true"
-            android:focusable="true" />
+            android:focusable="true"
+            app:tint="@color/text_primary" />
 
-        <TextView
+        <ImageView
             android:id="@+id/btnPrev"
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:layout_marginStart="12dp"
             android:background="@drawable/bg_icon"
-            android:gravity="center"
-            android:text="‹"
-            android:textColor="@color/text_primary"
-            android:textSize="22sp"
+            android:padding="8dp"
+            android:src="@drawable/ic_chevron_left"
             android:clickable="true"
-            android:focusable="true" />
+            android:focusable="true"
+            app:tint="@color/text_primary" />
 
         <TextView
             android:id="@+id/playerTitle"
@@ -57,17 +56,16 @@
             android:textColor="@color/text_primary"
             android:textSize="15sp" />
 
-        <TextView
+        <ImageView
             android:id="@+id/btnNext"
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:background="@drawable/bg_icon"
-            android:gravity="center"
-            android:text="›"
-            android:textColor="@color/text_primary"
-            android:textSize="22sp"
+            android:padding="8dp"
+            android:src="@drawable/ic_chevron_right"
             android:clickable="true"
-            android:focusable="true" />
+            android:focusable="true"
+            app:tint="@color/text_primary" />
     </LinearLayout>
 
 </FrameLayout>

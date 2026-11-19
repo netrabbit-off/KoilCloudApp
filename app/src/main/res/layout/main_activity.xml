@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg">
@@ -27,33 +28,31 @@
                 android:layout_marginBottom="28dp"
                 android:minHeight="56dp">
 
-                <TextView
+                <ImageView
                     android:id="@+id/backButton"
                     android:layout_width="40dp"
                     android:layout_height="40dp"
                     android:layout_marginEnd="8dp"
                     android:background="@drawable/bg_icon"
-                    android:gravity="center"
-                    android:text="←"
-                    android:textColor="@color/text_primary"
-                    android:textSize="20sp"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_arrow_back"
                     android:visibility="gone"
                     android:clickable="true"
-                    android:focusable="true" />
+                    android:focusable="true"
+                    app:tint="@color/text_primary" />
 
-                <TextView
+                <ImageView
                     android:id="@+id/clearSelectionButton"
                     android:layout_width="40dp"
                     android:layout_height="40dp"
                     android:layout_marginEnd="8dp"
                     android:background="@drawable/bg_icon"
-                    android:gravity="center"
-                    android:text="✕"
-                    android:textColor="@color/text_primary"
-                    android:textSize="18sp"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_close"
                     android:visibility="gone"
                     android:clickable="true"
-                    android:focusable="true" />
+                    android:focusable="true"
+                    app:tint="@color/text_primary" />
 
                 <HorizontalScrollView
                     android:layout_width="0dp"
@@ -72,46 +71,44 @@
                         android:paddingVertical="8dp" />
                 </HorizontalScrollView>
 
-                <TextView
+                <ImageView
                     android:id="@+id/pasteButton"
                     android:layout_width="40dp"
                     android:layout_height="40dp"
                     android:layout_marginStart="8dp"
                     android:background="@drawable/bg_icon"
-                    android:gravity="center"
-                    android:text="📋"
-                    android:textSize="18sp"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_content_paste"
                     android:visibility="gone"
                     android:clickable="true"
-                    android:focusable="true" />
+                    android:focusable="true"
+                    app:tint="@color/text_primary" />
 
-                <TextView
+                <ImageView
                     android:id="@+id/cancelCutButton"
                     android:layout_width="40dp"
                     android:layout_height="40dp"
                     android:layout_marginStart="8dp"
                     android:background="@drawable/bg_icon"
-                    android:gravity="center"
-                    android:text="✕"
-                    android:textColor="@color/text_primary"
-                    android:textSize="18sp"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_close"
                     android:visibility="gone"
                     android:clickable="true"
-                    android:focusable="true" />
+                    android:focusable="true"
+                    app:tint="@color/text_primary" />
 
-                <TextView
+                <ImageView
                     android:id="@+id/menuButton"
                     android:layout_width="40dp"
                     android:layout_height="40dp"
                     android:layout_marginStart="8dp"
                     android:background="@drawable/bg_icon"
-                    android:gravity="center"
-                    android:text="⋮"
-                    android:textColor="@color/text_primary"
-                    android:textSize="20sp"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_more_vert"
                     android:clickable="true"
                     android:focusable="true"
-                    android:visibility="gone" />
+                    android:visibility="gone"
+                    app:tint="@color/text_primary" />
 
                 <TextView
                     android:id="@+id/avatar"
@@ -194,7 +191,6 @@
                     android:textColor="@color/text_primary"
                     android:textSize="18sp"
                     android:textStyle="bold" />
-
             </LinearLayout>
 
             <androidx.recyclerview.widget.RecyclerView
@@ -224,21 +220,19 @@
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 
-    <!-- Кнопка загрузки -->
-    <TextView
+    <!-- FAB -->
+    <ImageView
         android:id="@+id/uploadButton"
         android:layout_width="56dp"
         android:layout_height="56dp"
         android:layout_gravity="bottom|end"
         android:layout_margin="24dp"
         android:background="@drawable/bg_fab"
-        android:gravity="center"
-        android:text="+"
-        android:textColor="#FFFFFF"
-        android:textSize="28sp"
-        android:textStyle="bold"
+        android:padding="16dp"
+        android:src="@drawable/ic_add"
         android:clickable="true"
         android:focusable="true"
-        android:elevation="8dp" />
+        android:elevation="8dp"
+        app:tint="#FFFFFF" />
 
 </FrameLayout>
